@@ -12,9 +12,10 @@ interface ZombieStats {
 }
 
 const ZOMBIE_STATS: Record<ZombieType, ZombieStats> = {
-  normal: { hp: 60, speed: 60, damage: 10, score: 100, texture: 'zombie-normal', scale: 1 },
-  fast: { hp: 35, speed: 130, damage: 8, score: 150, texture: 'zombie-fast', scale: 0.95 },
-  tank: { hp: 180, speed: 35, damage: 25, score: 300, texture: 'zombie-tank', scale: 1.2 },
+  // AI 生成的僵尸 PNG 是 360×360, 基础 scale 0.35 适配游戏
+  normal: { hp: 60, speed: 60, damage: 10, score: 100, texture: 'zombie-normal', scale: 0.35 },
+  fast: { hp: 35, speed: 130, damage: 8, score: 150, texture: 'zombie-fast', scale: 0.33 },
+  tank: { hp: 180, speed: 35, damage: 25, score: 300, texture: 'zombie-tank', scale: 0.42 },
 };
 
 /**
