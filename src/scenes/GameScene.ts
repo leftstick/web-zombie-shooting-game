@@ -224,9 +224,26 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnZombie(): void {
-    const spawnX = this.player.x > WORLD_WIDTH / 2
-      ? Math.min(this.player.x + 800, WORLD_WIDTH - 100)
-      : Math.max(this.player.x - 800, 100);
+    // 从 camera 视野外侧出生, 给玩家反应时间
+    const cam = this.cameras.main;
+    const viewLeft = cam.scrollX - 80;
+    const viewRight = cam.scrollX + GAME_WIDTH + 80;
+
+    // 随机选择一侧出生
+    const side = Math.random() < 0.5 ? 'left' : 'right';
+    let spawnX = side === 'left'
+      ? Math.max(viewLeft, 80)
+      : Math.min(viewRight, WORLD_WIDTH - 80);
+
+    // 保险: 距离玩家至少 400px
+    const dist = spawnX - this.player.x;
+    if (Math.abs(dist) < 400) {
+      spawnX = spawnX < this.player.x
+        ? this.player.x - 450
+        : this.player.x + 450;
+      spawnX = Math.max(80, Math.min(WORLD_WIDTH - 80, spawnX));
+    }
+
     const spawnY = GAME_HEIGHT - GROUND_HEIGHT - 30;
     const r = Math.random();
     let type: ZombieType = 'normal';

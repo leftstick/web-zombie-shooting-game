@@ -1,26 +1,32 @@
 /**
- * 像素艺术生成器 —— 全程序化生成, 暴徒猎手 + 生化危机混合风格
- * 所有素材都用 Graphics 的 fillRect 逐像素绘制, 保证像素风格统一
+ * 像素艺术生成器 —— 暴徒猎手 (Huntdown) 风格
  *
- * 像素块大小 (px): PX = 3, 即每个逻辑像素对应 3 个屏幕像素
+ * Huntdown 风格要点:
+ *   - 24×32 逻辑像素 (PX=3, 实际 72×96)
+ *   - 侧面视角, 身体前倾 (射击姿态)
+ *   - 持枪手臂前伸, 枪口指向前方
+ *   - 4-5 层着色 (高光/主色/中间/阴影/暗部)
+ *   - 轮廓线 (1px 深色描边) 保证 silhouette 清晰
+ *   - 头发/脸型/服装差异化 — 远看能认出是谁
  */
 import Phaser from 'phaser';
 
-export const PX = 3; // 每个逻辑像素 = 3 真实像素
+export const PX = 3;
 
-/** 用颜色代码绘制像素点阵: 'X'=主色 '.'=透明, 'S'=阴影, 'H'=高光 */
-function drawPixelArt(
+/* ============================================================
+ *  通用绘图工具
+ * ============================================================ */
+
+/** 画像素点阵: 'X'=主色 '.'=透明, '1'='2'='3'=各层色 */
+function drawArt(
   gfx: Phaser.GameObjects.Graphics,
   art: string[],
   palette: Record<string, number>,
   pxSize: number = PX,
-  originX = 0,
-  originY = 0,
-  flipX = false,
-  flipY = false
+  ox = 0, oy = 0
 ): { w: number; h: number } {
   const rows = art.length;
-  const cols = Math.max(...art.map((r) => r.length));
+  const cols = Math.max(...art.map(r => r.length));
   for (let y = 0; y < rows; y++) {
     const row = art[y];
     for (let x = 0; x < row.length; x++) {
@@ -28,440 +34,572 @@ function drawPixelArt(
       if (ch === '.' || ch === ' ') continue;
       const color = palette[ch];
       if (color === undefined) continue;
-      const dx = flipX ? originX + (cols - 1 - x) * pxSize : originX + x * pxSize;
-      const dy = flipY ? originY + (rows - 1 - y) * pxSize : originY + y * pxSize;
       gfx.fillStyle(color, 1);
-      gfx.fillRect(dx, dy, pxSize, pxSize);
+      gfx.fillRect(ox + x * pxSize, oy + y * pxSize, pxSize, pxSize);
     }
   }
   return { w: cols * pxSize, h: rows * pxSize };
 }
 
 /* ============================================================
- *  角色像素图 (24x32 逻辑像素, PX=3 后 72x96)
- *  侧面视角 (横版射击游戏标准) + 多层着色
- *  风格: 暴徒猎手 — 侧脸轮廓 + 持枪前伸 + 方正块体
+ *  角色模板 (24×32, 面向右)
+ *  Huntdown 风格: 前倾 + 持枪前伸 + 多层着色
+ *
+ *  颜色代号约定:
+ *    轮廓/暗部: 'K'
+ *    高光:       'H'
+ *    主色:       'M'
+ *    阴影:       'S'
+ *    眼睛白:     'W'
+ *    枪口火:     'F'
  * ============================================================ */
 
 /**
- * 绘制侧面视角角色
- * canvas: 24x32 逻辑像素, 原点左上角
- * 角色面向右侧
+ * 里昂·S·肯尼迪 — 棕发 RPD蓝背心 手枪
+ * 姿态: 身体略前倾, 持枪前伸瞄准
  */
-function drawSideCharacter(
-  gfx: Phaser.GameObjects.Graphics,
-  pal: {
-    hairHi: number;    hair: number;    hairSh: number;
-    skinHi: number;    skin: number;    skinSh: number;
-    shirtHi: number;   shirt: number;   shirtSh: number;
-    pantsHi: number;   pants: number;   pantsSh: number;
-    boots: number;     bootsSh: number;
-    belt: number;
-    gun: number;       gunMetal: number;
-    eye: number;       acc?: number;     // 配饰色 (徽章/领带等)
-  },
-  opts: {
-    hairStyle: 'short' | 'ponytail' | 'bun';
-    shirtType: 'vest' | 'jacket' | 'dress';
-    gunVariant: 'pistol' | 'smg' | 'revolver';
-    aimGun: boolean;
-  }
-): void {
-  const p = PX;
+const LEON_STAND = [
+  '........................',
+  '.....KKKKKKKK...........',  // 头发顶
+  '....KHHHHHHHK...........',  // 头发高光
+  '....KHHMMMMHK...........',
+  '....KMMMMMMK............',  // 头
+  '....KMMSMMMK............',
+  '....KMSSMSSK............',  // 眼
+  '....KWMSWMSK............',  // 眼白+瞳孔
+  '....KMSSSSSK............',
+  '....KMMMMMMK............',  // 脸
+  '....KSSSSSSK............',
+  '.....KKKKKKK............',  // 下巴
+  '......KKKK..............',  // 脖子
+  '....KKKMMMMKK...........',  // 肩
+  '...KHMMMMMMMK...........',  // 躯干 (蓝)
+  '...KMMMMMMMMK..KKKKK....',  // 手臂前伸
+  '...KMMSSSSMMK.KHHHHHK...',  // 手枪
+  '...KMMSSSSMMKKHHHHHHK...',
+  '...KMMMMMMMMKKMMMMMMK...',
+  '....KMMMMMMMKKMMMMMMK...',
+  '....KMMMMMMMKKKKKKKKK...',
+  '....KKKSSSSK............',
+  '.....KMMMMK.............',  // 腰带
+  '.....KMMMMK.............',
+  '....KMMMMMMK............',  // 裤
+  '....KMMMMMMK............',
+  '....KMSSSSMK............',
+  '....KMSSSSMK............',
+  '...KKMMMMMMKK...........',  // 靴
+  '...KKKKKKKKKK...........',
+  '........................',
+  '........................',
+];
 
-  // === 头部 (行 0-12) ===
-  // 后脑勺 + 头发
-  gfx.fillStyle(pal.hair, 1);
-  gfx.fillRect(5 * p, 1 * p, 8 * p, 3 * p);     // 头顶
-  gfx.fillRect(4 * p, 2 * p, 1 * p, 4 * p);    // 后脑
-  // 头发高光
-  gfx.fillStyle(pal.hairHi, 1);
-  gfx.fillRect(6 * p, 1 * p, 4 * p, 1 * p);
-  gfx.fillRect(5 * p, 2 * p, 1 * p, 1 * p);
-  // 头发阴影
-  gfx.fillStyle(pal.hairSh, 1);
-  gfx.fillRect(4 * p, 5 * p, 1 * p, 2 * p);
+const LEON_AIM = [
+  '........................',
+  '.....KKKKKKKK...........',
+  '....KHHHHHHHK...........',
+  '....KHHMMMMHK...........',
+  '....KMMMMMMK............',
+  '....KMMSMMMK............',
+  '....KMSSMSSK............',
+  '....KWMSWMSK............',
+  '....KMSSSSSK............',
+  '....KMMMMMMK............',
+  '....KSSSSSSK............',
+  '.....KKKKKKK............',
+  '......KKKK..............',
+  '...KKKKMMMMKK...........',  // 肩前倾
+  '..KHMMMMMMMMKKKKKKK.....',  // 躯干
+  '..KMMMMMMMMMMHHHHHHK....',  // 手臂+枪前伸
+  '..KMMSSSSMMMMHHHHHHHK...',
+  '..KMMSSSSMMMMMMMMMMMK...',
+  '..KMMMMMMMMMMMMMMMMMK...',
+  '...KMMMMMMMMK.FFFFFF....',  // 枪口闪光
+  '...KMMMMMMMMK.KKKKKK....',
+  '....KKSSSSSK............',
+  '.....KMMMMK.............',
+  '.....KMMMMK.............',
+  '....KMMMMMMK............',
+  '....KMMMMMMK............',
+  '....KMSSSSMK............',
+  '....KMSSSSMK............',
+  '...KKMMMMMMKK...........',
+  '...KKKKKKKKKK...........',
+  '........................',
+  '........................',
+];
 
-  // 马尾辫 (克莱尔)
-  if (opts.hairStyle === 'ponytail') {
-    gfx.fillStyle(pal.hair, 1);
-    gfx.fillRect(2 * p, 3 * p, 3 * p, 5 * p);
-    gfx.fillStyle(pal.hairHi, 1);
-    gfx.fillRect(2 * p, 3 * p, 1 * p, 3 * p);
-    gfx.fillStyle(pal.hairSh, 1);
-    gfx.fillRect(2 * p, 7 * p, 3 * p, 1 * p);
-  }
-  // 发髻 (艾达)
-  if (opts.hairStyle === 'bun') {
-    gfx.fillStyle(pal.hair, 1);
-    gfx.fillRect(3 * p, 0 * p, 3 * p, 2 * p);
-    gfx.fillStyle(pal.hairHi, 1);
-    gfx.fillRect(3 * p, 0 * p, 2 * p, 1 * p);
-  }
+/**
+ * 克莱尔·雷德菲尔德 — 红马尾 红夹克 冲锋枪
+ */
+const CLAIRE_STAND = [
+  '........................',
+  '......KKKKKK............',  // 头发顶
+  '.....KHHHHHHK...........',
+  '.....KHHMMMMK...........',
+  '.....KMMMMMMK.KKK.......',  // 马尾
+  '.....KMMMMMMK.HHK.......',
+  '.....KMMSSMMK.KKK.......',
+  '.....KWMSWMSK.KKK.......',
+  '.....KMMMMMMK.KKK.......',
+  '.....KMMMMMMK.KKK.......',
+  '.....KSSSSSSK.KKK.......',
+  '......KKKKKKK...........',
+  '.......KKKK.............',
+  '....KKKMMMMMKK..........',  // 肩
+  '...KHHMMMMMMMK..KKKK....',  // 红夹克
+  '...KHHMMMMMMMMKHHHHK....',  // 手臂+枪
+  '...KMMSSSSMMMMKHHHHK....',
+  '...KMMSSSSMMMMKMMMMK....',
+  '...KMMMMMMMMMMKMMMMK....',
+  '....KMMMMMMMMK.KKKKK....',
+  '....KMMMMMMMMK..........',
+  '....KKKSSSSKK...........',
+  '.....KMMMMK.............',
+  '.....KMMMMK.............',
+  '....KMMMMMMK............',  // 黑裤
+  '....KMMMMMMK............',
+  '....KMSSSSMK............',
+  '....KMSSSSMK............',
+  '...KKMMMMMMKK...........',
+  '...KKKKKKKKKK...........',
+  '........................',
+  '........................',
+];
 
-  // 脸部 (侧面)
-  gfx.fillStyle(pal.skin, 1);
-  gfx.fillRect(6 * p, 4 * p, 6 * p, 7 * p);     // 脸主体
-  gfx.fillStyle(pal.skinHi, 1);
-  gfx.fillRect(6 * p, 4 * p, 1 * p, 3 * p);     // 额头高光
-  gfx.fillRect(8 * p, 4 * p, 1 * p, 1 * p);
-  gfx.fillStyle(pal.skinSh, 1);
-  gfx.fillRect(11 * p, 4 * p, 1 * p, 7 * p);    // 下颌阴影
-  gfx.fillRect(9 * p, 10 * p, 3 * p, 1 * p);
+const CLAIRE_AIM = [
+  '........................',
+  '......KKKKKK............',
+  '.....KHHHHHHK...........',
+  '.....KHHMMMMK...........',
+  '.....KMMMMMMK.KKK.......',
+  '.....KMMMMMMK.HHK.......',
+  '.....KMMSSMMK.KKK.......',
+  '.....KWMSWMSK.KKK.......',
+  '.....KMMMMMMK.KKK.......',
+  '.....KMMMMMMK.KKK.......',
+  '.....KSSSSSSK.KKK.......',
+  '......KKKKKKK...........',
+  '.......KKKK.............',
+  '...KKKKMMMMMMK..........',
+  '..KHHMMMMMMMMKKKKKKKK...',
+  '..KHHMMMMMMMMMMHHHHHHK..',
+  '..KMMSSSSMMMMMMHHHHHHK..',
+  '..KMMSSSSMMMMMMMMMMMMK..',
+  '..KMMMMMMMMMMMMMMMMMMK..',
+  '...KMMMMMMMMMMFFFFFF....',  // 枪口闪光
+  '...KMMMMMMMMMMKKKKKK....',
+  '....KKSSSSSK............',
+  '.....KMMMMK.............',
+  '.....KMMMMK.............',
+  '....KMMMMMMK............',
+  '....KMMMMMMK............',
+  '....KMSSSSMK............',
+  '....KMSSSSMK............',
+  '...KKMMMMMMKK...........',
+  '...KKKKKKKKKK...........',
+  '........................',
+  '........................',
+];
 
-  // 眼睛
-  gfx.fillStyle(0xffffff, 1);
-  gfx.fillRect(9 * p, 6 * p, 2 * p, 1 * p);
-  gfx.fillStyle(pal.eye, 1);
-  gfx.fillRect(10 * p, 6 * p, 1 * p, 1 * p);
+/**
+ * 艾达·王 — 黑发髻 红旗袍 左轮手枪
+ */
+const ADA_STAND = [
+  '........................',
+  '....KKKK................',  // 发髻
+  '...KHHHHK...............',
+  '...KMMMMK...............',
+  '....KKKKK...............',
+  '.....KKKKKK.............',  // 头
+  '....KHHHHHHK............',
+  '....KHHMMMMHK...........',
+  '....KMMSSMMMK...........',
+  '....KWMSWMSK............',
+  '....KMMMMMMMK...........',
+  '....KMMMMMMMK...........',
+  '.....KKKKKKKK...........',
+  '......KKKK..............',
+  '....KKKMMMMMKK..........',  // 旗袍肩
+  '...KHHMMMMMMMK..KKK.....',  // 旗袍身体
+  '...KHHMMMMMMMMKHHHK.....',  // 手臂+左轮
+  '...KMMSSSSMMMMKHHHK.....',
+  '...KMMSSSSMMMMKMMMK.....',
+  '...KMMMMMMMMMMKMMMK.....',
+  '....KMMMMMMMMMKKKKK.....',
+  '....KMMMMMMMMMK.........',
+  '....KKKKSSSKKKK.........',
+  '......KMMMK.............',
+  '......KMMMK.............',
+  '.....KMMMMMK............',
+  '.....KMMMMMK............',
+  '.....KMSSSMK............',
+  '.....KMSSSMK............',
+  '....KKMMMMMKK...........',
+  '....KKKKKKKKK...........',
+  '........................',
+];
 
-  // 鼻子
-  gfx.fillStyle(pal.skinSh, 1);
-  gfx.fillRect(12 * p, 7 * p, 1 * p, 2 * p);
+const ADA_AIM = [
+  '........................',
+  '....KKKK................',
+  '...KHHHHK...............',
+  '...KMMMMK...............',
+  '....KKKKK...............',
+  '.....KKKKKK.............',
+  '....KHHHHHHK............',
+  '....KHHMMMMHK...........',
+  '....KMMSSMMMK...........',
+  '....KWMSWMSK............',
+  '....KMMMMMMMK...........',
+  '....KMMMMMMMK...........',
+  '.....KKKKKKKK...........',
+  '......KKKK..............',
+  '...KKKKMMMMMMK..........',
+  '..KHHMMMMMMMMKKKKKKK....',
+  '..KHHMMMMMMMMMMHHHHHK...',
+  '..KMMSSSSMMMMMMHHHHHK...',
+  '..KMMSSSSMMMMMMMMMMMK...',
+  '..KMMMMMMMMMMMMMMMMMK...',
+  '...KMMMMMMMMMMFFFFFF....',
+  '...KMMMMMMMMMMKKKKKK....',
+  '....KMMMMMMMMMK.........',
+  '....KKKSSSKKKKK.........',
+  '......KMMMK.............',
+  '.....KMMMMMK............',
+  '.....KMMMMMK............',
+  '.....KMSSSMK............',
+  '.....KMSSSMK............',
+  '....KKMMMMMKK...........',
+  '....KKKKKKKKK...........',
+  '........................',
+];
 
-  // 嘴
-  gfx.fillStyle(0x8a3030, 1);
-  gfx.fillRect(11 * p, 9 * p, 2 * p, 1 * p);
+/* ============================================================
+ *  角色色板 —— Huntdown 风格: 深轮廓 + 明亮主色 + 多层着色
+ * ============================================================ */
 
-  // 脖子
-  gfx.fillStyle(pal.skinSh, 1);
-  gfx.fillRect(7 * p, 11 * p, 3 * p, 2 * p);
-
-  // === 躯干 (行 13-21) ===
-  gfx.fillStyle(pal.shirt, 1);
-  gfx.fillRect(5 * p, 13 * p, 8 * p, 9 * p);     // 主体
-  gfx.fillStyle(pal.shirtHi, 1);
-  gfx.fillRect(5 * p, 13 * p, 8 * p, 1 * p);    // 肩部高光
-  gfx.fillRect(5 * p, 13 * p, 1 * p, 9 * p);    // 背部高光
-  gfx.fillStyle(pal.shirtSh, 1);
-  gfx.fillRect(11 * p, 14 * p, 2 * p, 8 * p);   // 腹部阴影
-  gfx.fillRect(5 * p, 21 * p, 8 * p, 1 * p);    // 底边阴影
-
-  // 服装细节
-  if (opts.shirtType === 'vest') {
-    // RPD 背心: 前拉链 + 徽章
-    gfx.fillStyle(pal.shirtSh, 1);
-    gfx.fillRect(10 * p, 14 * p, 1 * p, 7 * p); // 拉链
-    if (pal.acc !== undefined) {
-      gfx.fillStyle(pal.acc, 1);
-      gfx.fillRect(11 * p, 16 * p, 2 * p, 2 * p); // RPD 徽章
-    }
-  } else if (opts.shirtType === 'jacket') {
-    // 夹克: 翻领 + 拉链
-    gfx.fillStyle(pal.shirtSh, 1);
-    gfx.fillRect(10 * p, 13 * p, 3 * p, 1 * p); // 翻领
-    gfx.fillRect(11 * p, 14 * p, 1 * p, 7 * p); // 拉链
-    gfx.fillStyle(pal.shirtHi, 1);
-    gfx.fillRect(9 * p, 14 * p, 1 * p, 6 * p);  // 领翻折
-  } else if (opts.shirtType === 'dress') {
-    // 旗袍: 立领 + 盘扣 + 开衩
-    gfx.fillStyle(pal.shirtSh, 1);
-    gfx.fillRect(10 * p, 13 * p, 1 * p, 3 * p);  // 立领
-    gfx.fillRect(11 * p, 17 * p, 1 * p, 1 * p);  // 盘扣
-    gfx.fillRect(11 * p, 19 * p, 1 * p, 1 * p);
-    gfx.fillStyle(pal.skin, 1);
-    gfx.fillRect(11 * p, 21 * p, 2 * p, 1 * p);  // 开衩露腿
-  }
-
-  // 腰带
-  gfx.fillStyle(pal.belt, 1);
-  gfx.fillRect(5 * p, 21 * p, 8 * p, 1 * p);
-
-  // === 手臂 + 枪 ===
-  if (opts.aimGun) {
-    // 前伸手臂 (面向右伸出)
-    const armLen = opts.gunVariant === 'smg' ? 6 : 5;
-    gfx.fillStyle(pal.skin, 1);
-    gfx.fillRect(13 * p, 15 * p, armLen * p, 2 * p);  // 手臂
-    gfx.fillStyle(pal.skinHi, 1);
-    gfx.fillRect(13 * p, 15 * p, armLen * p, 1 * p);  // 手臂高光
-    // 手
-    gfx.fillStyle(pal.skinSh, 1);
-    gfx.fillRect((13 + armLen) * p, 15 * p, 1 * p, 2 * p);
-    // 枪
-    const gunStart = (14 + armLen) * p;
-    const gunLen = opts.gunVariant === 'smg' ? 5 : 4;
-    gfx.fillStyle(pal.gun, 1);
-    gfx.fillRect(gunStart, 15 * p, gunLen * p, 2 * p);
-    gfx.fillStyle(pal.gunMetal, 1);
-    gfx.fillRect(gunStart, 15 * p, gunLen * p, 1 * p);  // 枪管金属高光
-    // 枪口
-    gfx.fillStyle(0xffd700, 1);
-    gfx.fillRect((gunStart + gunLen) * p, 15 * p, 1 * p, 2 * p);
-  } else {
-    // 站姿: 手臂自然弯曲在身侧
-    gfx.fillStyle(pal.shirt, 1);
-    gfx.fillRect(12 * p, 14 * p, 2 * p, 5 * p);   // 上臂
-    gfx.fillStyle(pal.shirtSh, 1);
-    gfx.fillRect(13 * p, 14 * p, 1 * p, 5 * p);
-    // 前臂 + 手
-    gfx.fillStyle(pal.skin, 1);
-    gfx.fillRect(13 * p, 18 * p, 1 * p, 3 * p);
-    gfx.fillStyle(pal.skinSh, 1);
-    gfx.fillRect(13 * p, 20 * p, 1 * p, 1 * p);
-    // 腰间枪套
-    gfx.fillStyle(pal.gun, 1);
-    gfx.fillRect(11 * p, 18 * p, 2 * p, 3 * p);
-  }
-
-  // === 腿 (行 22-27) ===
-  // 前腿 (右, 靠近镜头)
-  gfx.fillStyle(pal.pants, 1);
-  gfx.fillRect(8 * p, 22 * p, 3 * p, 6 * p);
-  gfx.fillStyle(pal.pantsHi, 1);
-  gfx.fillRect(8 * p, 22 * p, 1 * p, 6 * p);
-  gfx.fillStyle(pal.pantsSh, 1);
-  gfx.fillRect(10 * p, 22 * p, 1 * p, 6 * p);
-
-  // 后腿 (左, 远离镜头)
-  gfx.fillStyle(pal.pantsSh, 1);
-  gfx.fillRect(5 * p, 22 * p, 3 * p, 6 * p);
-
-  // === 靴子 (行 28-31) ===
-  // 前靴
-  gfx.fillStyle(pal.boots, 1);
-  gfx.fillRect(7 * p, 28 * p, 5 * p, 3 * p);    // 前靴
-  gfx.fillStyle(pal.bootsSh, 1);
-  gfx.fillRect(10 * p, 28 * p, 2 * p, 3 * p);
-  gfx.fillRect(7 * p, 30 * p, 5 * p, 1 * p);   // 鞋底
-  // 后靴
-  gfx.fillStyle(pal.bootsSh, 1);
-  gfx.fillRect(4 * p, 28 * p, 4 * p, 3 * p);
-  gfx.fillRect(4 * p, 30 * p, 4 * p, 1 * p);
+function makeLeonPalette(): Record<string, number> {
+  return {
+    K: 0x0d0d0d,       // 轮廓/最暗
+    H_hair: 0x8b5a2b,  // 头发高光
+    M_hair: 0x5a3a1a,  // 头发主
+    S_hair: 0x3a2010,  // 头发阴影
+    H_skin: 0xf4c9a0,  // 皮肤高光
+    M_skin: 0xe0b080,  // 皮肤主
+    S_skin: 0xa07050,  // 皮肤阴影
+    H_shirt: 0x2a4a7a, // 蓝背心高光
+    M_shirt: 0x1a3a5c, // 蓝背心主
+    S_shirt: 0x0d2033, // 蓝背心阴影
+    H_pants: 0x3a4050, // 裤高光
+    M_pants: 0x1a1f30, // 裤主
+    S_pants: 0x0d1018, // 裤阴影
+    boots: 0x1a1a1a,
+    belt: 0x3a2510,
+    H_gun: 0x5a5a5a,   // 枪管高光
+    M_gun: 0x2a2a2a,   // 枪主
+    S_gun: 0x0a0a0a,   // 枪阴影
+    W: 0xffffff,
+    eye: 0x1565c0,
+    F: 0xfff176,       // 枪口闪光
+    badge: 0xffd700,   // RPD 徽章 (预留)
+  };
 }
 
-function makePlayerTexture(
+function makeClairePalette(): Record<string, number> {
+  return {
+    K: 0x0d0d0d,
+    H_hair: 0xef5350,
+    M_hair: 0xc62828,
+    S_hair: 0x8e1414,
+    H_skin: 0xf4c9a0,
+    M_skin: 0xe0b080,
+    S_skin: 0xa07050,
+    H_shirt: 0xef5350,  // 红夹克
+    M_shirt: 0xc62828,
+    S_shirt: 0x8e1414,
+    H_pants: 0x3a3a3a,
+    M_pants: 0x212121,
+    S_pants: 0x111111,
+    boots: 0x3e2723,
+    belt: 0x1a1a1a,
+    H_gun: 0x5a5a5a,
+    M_gun: 0x2a2a2a,
+    S_gun: 0x0a0a0a,
+    W: 0xffffff,
+    eye: 0x4caf50,
+    F: 0xfff176,
+  };
+}
+
+function makeAdaPalette(): Record<string, number> {
+  return {
+    K: 0x0d0d0d,
+    H_hair: 0x3a3a3a,
+    M_hair: 0x1a1a1a,
+    S_hair: 0x050505,
+    H_skin: 0xf4c9a0,
+    M_skin: 0xe0b080,
+    S_skin: 0xa07050,
+    H_shirt: 0xd32f2f,  // 红旗袍
+    M_shirt: 0xb71c1c,
+    S_shirt: 0x7f1010,
+    H_pants: 0x1a1a1a,  // 黑丝
+    M_pants: 0x0a0a0a,
+    S_pants: 0x000000,
+    boots: 0x0a0a0a,
+    belt: 0x1a1a1a,
+    H_gun: 0x8d6e63,    // 左轮金属
+    M_gun: 0x3e2723,
+    S_gun: 0x1a0e08,
+    W: 0xffffff,
+    eye: 0xb71c1c,
+    F: 0xfff176,
+  };
+}
+
+/* ============================================================
+ *  渲染函数 —— 把 Huntdown 风格 art 数组 + 色板渲染成纹理
+ *  关键: 把 art 中的颜色代号 (H/M/S/K) 映射到实际颜色
+ * ============================================================ */
+
+function makeCharacterTexture(
   scene: Phaser.Scene,
   key: string,
-  opts: {
-    skin?: number;
-    skinHi?: number;
-    skinSh?: number;
-    hair?: number;
-    hairHi?: number;
-    hairSh?: number;
-    pants?: number;
-    pantsHi?: number;
-    pantsSh?: number;
-    shirt?: number;
-    shirtHi?: number;
-    shirtSh?: number;
-    boots?: number;
-    bootsSh?: number;
-    belt?: number;
-    gun?: number;
-    gunMetal?: number;
-    eye?: number;
-    acc?: number;
-    hairStyle: 'short' | 'ponytail' | 'bun';
-    shirtType: 'vest' | 'jacket' | 'dress';
-    gunVariant: 'pistol' | 'smg' | 'revolver';
-    aimGun: boolean;
-  }
+  art: string[],
+  palette: Record<string, number>,
+  // 角色类型决定各部位颜色映射
+  type: 'leon' | 'claire' | 'ada'
 ): void {
+  const p = palette;
+
+  // 不同角色部位颜色映射
+  const colorMap: Record<string, number> = {};
+
+  if (type === 'leon') {
+    colorMap['K'] = p.K;
+    colorMap['H'] = p.H_skin;      // 头/皮肤高光
+    colorMap['M'] = p.M_skin;      // 头/皮肤主
+    colorMap['S'] = p.S_skin;      // 头/皮肤阴影
+    colorMap['W'] = p.W;
+    colorMap['F'] = p.F;
+  } else if (type === 'claire') {
+    colorMap['K'] = p.K;
+    colorMap['H'] = p.H_skin;
+    colorMap['M'] = p.M_skin;
+    colorMap['S'] = p.S_skin;
+    colorMap['W'] = p.W;
+    colorMap['F'] = p.F;
+  } else {
+    colorMap['K'] = p.K;
+    colorMap['H'] = p.H_skin;
+    colorMap['M'] = p.M_skin;
+    colorMap['S'] = p.S_skin;
+    colorMap['W'] = p.W;
+    colorMap['F'] = p.F;
+  }
+
+  // 额外部位色 — 渲染时需要按位置区分头发/衣服/枪/裤
+  // 因为 art 中同一字符在不同行代表不同部位, 我们用逐行替换的方式
+  // 更简单: 直接生成完整的字符→颜色映射, 按行号区分
+  const rows = art.length;
+
   const g = scene.add.graphics();
-  drawSideCharacter(g, {
-    hairHi: opts.hairHi ?? 0xffffff,
-    hair: opts.hair ?? 0x2b1a0a,
-    hairSh: opts.hairSh ?? 0x1a0e04,
-    skinHi: opts.skinHi ?? 0xf4c9a0,
-    skin: opts.skin ?? 0xe0b080,
-    skinSh: opts.skinSh ?? 0xb08050,
-    shirtHi: opts.shirtHi ?? 0xffffff,
-    shirt: opts.shirt ?? 0x2e7d32,
-    shirtSh: opts.shirtSh ?? 0x1a3a1a,
-    pantsHi: opts.pantsHi ?? 0x607080,
-    pants: opts.pants ?? 0x455a64,
-    pantsSh: opts.pantsSh ?? 0x2a3a44,
-    boots: opts.boots ?? 0x212121,
-    bootsSh: opts.bootsSh ?? 0x111111,
-    belt: opts.belt ?? 0x3e2723,
-    gun: opts.gun ?? 0x1a1a1a,
-    gunMetal: opts.gunMetal ?? 0x424242,
-    eye: opts.eye ?? 0x1a237e,
-    acc: opts.acc,
-  }, {
-    hairStyle: opts.hairStyle,
-    shirtType: opts.shirtType,
-    gunVariant: opts.gunVariant,
-    aimGun: opts.aimGun,
-  });
+
+  for (let y = 0; y < rows; y++) {
+    const row = art[y];
+    for (let x = 0; x < row.length; x++) {
+      const ch = row[x];
+      if (ch === '.' || ch === ' ') continue;
+
+      // 根据行号和列号判断部位
+      // 头: 行 0-12
+      // 躯干+手臂+枪: 行 13-22
+      // 腰带+裤+靴: 行 23-31
+      let color = colorMap[ch];
+
+      if (color === undefined) {
+        // 特殊颜色代号
+        if (ch === 'K') color = p.K;
+        else if (ch === 'W') color = p.W;
+        else if (ch === 'F') color = p.F;
+        else {
+          // 根据行号和字符推断部位颜色
+          if (y <= 12) {
+            // 头部区域
+            if (ch === 'H') color = p.H_skin;
+            else if (ch === 'M') color = p.M_skin;
+            else if (ch === 'S') color = p.S_skin;
+            // 头发 (行 0-4)
+            if (y <= 4) {
+              if (ch === 'H') color = p.H_hair;
+              else if (ch === 'M') color = p.M_hair;
+              else if (ch === 'S') color = p.S_hair;
+            }
+            // 马尾/发髻 (右侧延伸)
+            if (x >= 20 && ch === 'K') color = p.M_hair;
+          } else if (y >= 13 && y <= 22) {
+            // 躯干 + 手臂 + 枪
+            if (ch === 'H') color = p.H_shirt;
+            else if (ch === 'M') color = p.M_shirt;
+            else if (ch === 'S') color = p.S_shirt;
+            // 枪区域 (右侧 x >= 16)
+            if (x >= 16) {
+              if (ch === 'H') color = p.H_gun;
+              else if (ch === 'M') color = p.M_gun;
+              else if (ch === 'S') color = p.S_gun;
+            }
+          } else if (y >= 23) {
+            // 腰带 + 裤 + 靴
+            if (y === 23 || y === 24) {
+              // 腰带
+              color = p.belt;
+            } else {
+              if (ch === 'H') color = p.H_pants;
+              else if (ch === 'M') color = p.M_pants;
+              else if (ch === 'S') color = p.S_pants;
+              // 靴子 (行 29+)
+              if (y >= 29) {
+                color = p.boots;
+              }
+            }
+          }
+        }
+      }
+
+      if (color === undefined) continue;
+      g.fillStyle(color, 1);
+      g.fillRect(x * PX, y * PX, PX, PX);
+    }
+  }
+
   g.generateTexture(key, 24 * PX, 32 * PX);
   g.destroy();
 }
 
-/* --- 里昂: 棕发 RPD蓝背心 战术裤 手枪 --- */
+/* ============================================================
+ *  导出接口 —— 保持原有函数名, 内部完全重写
+ * ============================================================ */
+
 export function makeLeonTexture(scene: Phaser.Scene): void {
-  const base = {
-    hairHi: 0x8b5a2b,  hair: 0x5a3a1a,  hairSh: 0x3a2010,
-    skinHi: 0xf4c9a0,  skin: 0xe0b080,  skinSh: 0xa07050,
-    shirtHi: 0x2a4a7a, shirt: 0x1a3a5c,  shirtSh: 0x0d2033,
-    pantsHi: 0x2a3040, pants: 0x1a1f30,  pantsSh: 0x0d1018,
-    boots: 0x2a2a2a,   bootsSh: 0x111111,
-    belt: 0x3a2510,
-    gun: 0x1a1a1a,     gunMetal: 0x424242,
-    eye: 0x1565c0,     acc: 0xffd700,
-    hairStyle: 'short' as const,
-    shirtType: 'vest' as const,
-    gunVariant: 'pistol' as const,
-  };
-  makePlayerTexture(scene, 'player-leon', { ...base, aimGun: false });
-  makePlayerTexture(scene, 'player-leon-aim', { ...base, aimGun: true });
+  const pal = makeLeonPalette();
+  makeCharacterTexture(scene, 'player-leon', LEON_STAND, pal, 'leon');
+  makeCharacterTexture(scene, 'player-leon-aim', LEON_AIM, pal, 'leon');
 }
 
-/* --- 克莱尔: 红马尾 红夹克 黑裤 冲锋枪 --- */
 export function makeClaireTexture(scene: Phaser.Scene): void {
-  const base = {
-    hairHi: 0xef5350,  hair: 0xc62828,  hairSh: 0x8e1414,
-    skinHi: 0xf4c9a0,  skin: 0xe0b080,  skinSh: 0xa07050,
-    shirtHi: 0xef5350, shirt: 0xc62828,  shirtSh: 0x8e1414,
-    pantsHi: 0x3a3a3a, pants: 0x212121,  pantsSh: 0x111111,
-    boots: 0x3e2723,   bootsSh: 0x1a0e08,
-    belt: 0x1a1a1a,
-    gun: 0x1a1a1a,     gunMetal: 0x424242,
-    eye: 0x4caf50,     acc: 0xffeb3b,
-    hairStyle: 'ponytail' as const,
-    shirtType: 'jacket' as const,
-    gunVariant: 'smg' as const,
-  };
-  makePlayerTexture(scene, 'player-claire', { ...base, aimGun: false });
-  makePlayerTexture(scene, 'player-claire-aim', { ...base, aimGun: true });
+  const pal = makeClairePalette();
+  makeCharacterTexture(scene, 'player-claire', CLAIRE_STAND, pal, 'claire');
+  makeCharacterTexture(scene, 'player-claire-aim', CLAIRE_AIM, pal, 'claire');
 }
 
-/* --- 艾达王: 黑发髻 红旗袍 黑丝 左轮 --- */
 export function makeAdaTexture(scene: Phaser.Scene): void {
-  const base = {
-    hairHi: 0x4a4a4a,  hair: 0x1a1a1a,  hairSh: 0x0a0a0a,
-    skinHi: 0xf4c9a0,  skin: 0xe0b080,  skinSh: 0xa07050,
-    shirtHi: 0xd32f2f, shirt: 0xb71c1c,  shirtSh: 0x7f1010,
-    pantsHi: 0x2a2a2a, pants: 0x0a0a0a,  pantsSh: 0x000000,
-    boots: 0x1a1a1a,   bootsSh: 0x000000,
-    belt: 0x1a1a1a,
-    gun: 0x3e2723,     gunMetal: 0x8d6e63,
-    eye: 0xb71c1c,     acc: 0xffd700,
-    hairStyle: 'bun' as const,
-    shirtType: 'dress' as const,
-    gunVariant: 'revolver' as const,
-  };
-  makePlayerTexture(scene, 'player-ada', { ...base, aimGun: false });
-  makePlayerTexture(scene, 'player-ada-aim', { ...base, aimGun: true });
+  const pal = makeAdaPalette();
+  makeCharacterTexture(scene, 'player-ada', ADA_STAND, pal, 'ada');
+  makeCharacterTexture(scene, 'player-ada-aim', ADA_AIM, pal, 'ada');
 }
 
 /* ============================================================
- *  僵尸 (16x24) — 绿灰皮肤 + 破衣 + 血渍 + 前伸手臂
+ *  僵尸 (Huntdown 风格: 前伸手臂 + 破衣 + 血渍)
  * ============================================================ */
+
 const ZOMBIE_BASE = [
   '................',
-  '......SSSS......', // 头发
-  '.....SSSSSS.....',
-  '....GGGGGGGG....', // 额头
-  '....GGGGGGGG....',
-  '....RRGGGGRR....', // 红眼 + 肉
-  '....GGGGGGGG....',
-  '....GGGGGGGG....',
-  '....GGGGGGGG....',
-  '....BBBBBBBB....',
-  '..UUUUUUUUUUUU..', // 破上衣 (紫)
-  '..UUURUUUUURUU..', // 破洞 + 血
-  '..UUUUUUUUUUUU..',
-  '..UUUUUUUUUUUU..',
-  '...UUUUUUUUUU...',
-  '....KKKKKKKK....', // 破裤
-  '....KKRRKKKK....',
+  '.....KKKKK......',
+  '....KHHHHHK.....',
+  '....KHHHHHK.....',
+  '....KGGGGGK.....',  // 头
+  '....KGRGGGRK....',  // 红眼
+  '....KGGGGGK.....',
+  '....KGGGGGK.....',
   '....KKKKKKKK....',
-  '....PPPPPPPP....',
-  '....PPPPPPPP....',
-  '................',
-  '................',
-  '................',
+  '..KKKKKKKKKKKK..',
+  '.KHHHHHHHHHHHHK.',  // 前伸手臂
+  '.KHHRRRHHHHRHHK.',  // 破衣+血
+  'KHHHHHHHHHHHHHHK',  // 破上衣
+  'KHHHHHHHHHHHHHHK',
+  '.KSSSSSSSSSSSK..',
+  '..KKKKKKKKKKK...',
+  '....KGGGGGK.....',  // 破裤
+  '....KGRGGGK.....',
+  '....KGGGGGK.....',
+  '....KKKKKKK.....',
+  '....KSSSSSK.....',
+  '....KSSSSSK.....',
+  '....KKKKKKK.....',
   '................',
 ];
 
 function makeZombieTexture(scene: Phaser.Scene, key: string, paletteOverride?: Record<string, number>): void {
   const g = scene.add.graphics();
   const pal = {
-    S: 0x1a1a1a,
+    K: 0x0d0d0d,
+    H: 0x7a9a40,  // 皮肤亮
+    M: 0x6b8e23,  // 皮肤主
+    S: 0x4a6b16,  // 皮肤阴影
     G: 0x6b8e23,
     R: 0xcc0000,
-    B: 0x333333,
-    U: 0x3a1c4a,
-    K: 0x4a3a2a,
-    P: 0x1a1a1a,
     ...paletteOverride,
   };
-  drawPixelArt(g, ZOMBIE_BASE, pal);
 
-  // 前伸手臂 — 暴徒猎手风格: 僵尸双手前伸抓向玩家
+  drawArt(g, ZOMBIE_BASE, pal);
+  // 前伸手臂 (Huntdown 僵尸经典姿态)
   g.fillStyle(pal.G, 1);
-  for (let i = 0; i < 10; i++) {
-    g.fillRect((16 + i) * PX, 11 * PX, PX, PX);
+  for (let i = 0; i < 12; i++) {
+    g.fillRect((16 + i) * PX, 10 * PX, PX, PX);
   }
-  g.fillStyle(pal.G, 1);
-  for (let i = 0; i < 6; i++) {
-    g.fillRect((-1 - i) * PX, 11 * PX, PX, PX);
+  g.fillStyle(pal.S, 1);
+  for (let i = 0; i < 8; i++) {
+    g.fillRect((-1 - i) * PX, 10 * PX, PX, PX);
   }
 
-  g.generateTexture(key, 18 * PX, 24 * PX);
+  g.generateTexture(key, 20 * PX, 24 * PX);
   g.destroy();
 }
 
 export function makeZombies(scene: Phaser.Scene): void {
   makeZombieTexture(scene, 'zombie-normal');
-  makeZombieTexture(scene, 'zombie-fast', { G: 0x8fbc8f, K: 0x333333 });
-  makeZombieTexture(scene, 'zombie-tank', { G: 0x3a5a20, U: 0x2a3a4a, K: 0x4a4a4a });
+  makeZombieTexture(scene, 'zombie-fast', { G: 0x8fbc8f, H: 0xa0d8a0, M: 0x8fbc8f, K: 0x0d0d0d });
+  makeZombieTexture(scene, 'zombie-tank', { G: 0x3a5a20, H: 0x4a7a28, M: 0x3a5a20 });
 }
 
 /* ============================================================
  *  BOSS — 舔食者 (Licker)
- *  参考生化危机: 光滑无毛 皮肤灰褐色 脑外露 利爪 长舌头 爬行姿态
- *  尺寸: 32x20 逻辑像素 (爬行: 宽 > 高)
  * ============================================================ */
 const LICKER = [
   '................................',
   '................................',
-  '...........SSSSSSSSSSSS........', // 背部脊刺
+  '...........SSSSSSSSSSSS........',
   '..........SSSSSSSSSSSSSS.......',
-  '.........GGGGGGGGGGGGGGGG......', // 主体 (灰褐)
+  '.........GGGGGGGGGGGGGGGG......',
   '........GGGGGGGGGGGGGGGGGG.....',
   '.....GGGGGGGGGGGGGGGGGGGGGG....',
   '....GGGGGGGGGGGGGGGGGGGGGGGG...',
-  '...GGGGWWGGGGGGGGGGGGGGGGGGGG..', // 白色大脑外露
+  '...GGGGWWGGGGGGGGGGGGGGGGGGGG..',
   '...GGGGWWWWWWWWWWWWGGGGGGGGGG..',
   '....GGGGGGGGGGGGGGGGGGGGGGGG...',
   '.....GGGGGGGGGGGGGGGGGGGGGG....',
-  '..GGG....GGGGGGGGGGGGG....GGG..', // 前爪
+  '..GGG....GGGGGGGGGGGGG....GGG..',
   '.GGG......GGGGGGGGGGG......GGG.',
   'GGGGG.......GGGGGGGGG.......GGG',
   'GGG..........GGGGGGG..........GG',
   'G.............GGGGG............G',
   '...............GGG.............',
   '................G..............',
-  '..............................T', // 舌头占位 (运行时可动画)
+  '..............................T',
 ];
 
 export function makeLickerTexture(scene: Phaser.Scene): void {
   const g = scene.add.graphics();
-  const palette = {
-    S: 0x2a1a10,  // 脊刺 深棕
-    G: 0x6b5a42,  // 皮肤 灰褐
-    W: 0xe8dcc8,  // 大脑 奶白
-    R: 0x9a0000,  // 舌肉红
-  };
-  drawPixelArt(g, LICKER, palette);
-
-  // 血眼
+  const palette = { S: 0x2a1a10, G: 0x6b5a42, W: 0xe8dcc8, R: 0x9a0000 };
+  drawArt(g, LICKER, palette);
   g.fillStyle(0xff0000, 1);
   g.fillRect(20 * PX, 6 * PX, 2 * PX, 2 * PX);
-
   g.generateTexture('licker', 32 * PX, 20 * PX);
   g.destroy();
 
-  // 舔食者舌头贴图 (用于吐舌攻击)
   const g2 = scene.add.graphics();
   g2.fillStyle(0xcc0000, 1);
-  for (let i = 0; i < 12; i++) {
-    g2.fillRect(i * PX, 0, PX, PX);
-  }
+  for (let i = 0; i < 12; i++) g2.fillRect(i * PX, 0, PX, PX);
   g2.fillStyle(0x8a0000, 1);
   g2.fillRect(0, 0, PX, PX);
   g2.generateTexture('licker-tongue', 12 * PX, PX);
@@ -469,76 +607,41 @@ export function makeLickerTexture(scene: Phaser.Scene): void {
 }
 
 /* ============================================================
- *  障碍物 — 车辆 / 集装箱 / 油桶 (可摧毁)
+ *  障碍物 — 车辆 / 集装箱 / 油桶
  * ============================================================ */
 
 function makeBoxArt(
-  scene: Phaser.Scene,
-  key: string,
-  width: number, // 逻辑像素宽
-  height: number,
-  palette: { base: number; dark: number; light: number; accent?: number }
+  scene: Phaser.Scene, key: string, w: number, h: number,
+  pal: { base: number; dark: number; light: number }
 ): void {
   const g = scene.add.graphics();
-  // 主体
-  g.fillStyle(palette.base, 1);
-  g.fillRect(0, 0, width * PX, height * PX);
-  // 顶高光
-  g.fillStyle(palette.light, 1);
-  g.fillRect(0, 0, width * PX, PX * 2);
-  // 右阴影
-  g.fillStyle(palette.dark, 1);
-  g.fillRect((width - 2) * PX, 0, PX * 2, height * PX);
-  // 底阴影
-  g.fillRect(0, (height - 2) * PX, width * PX, PX * 2);
-  // 边界线
+  g.fillStyle(pal.base, 1);
+  g.fillRect(0, 0, w * PX, h * PX);
+  g.fillStyle(pal.light, 1);
+  g.fillRect(0, 0, w * PX, PX * 2);
+  g.fillStyle(pal.dark, 1);
+  g.fillRect((w - 2) * PX, 0, PX * 2, h * PX);
+  g.fillRect(0, (h - 2) * PX, w * PX, PX * 2);
   g.lineStyle(PX, 0x000000, 0.6);
-  g.strokeRect(0, 0, width * PX, height * PX);
-  // 细节: 竖条纹
-  for (let x = PX * 4; x < width * PX; x += PX * 4) {
-    g.fillStyle(palette.dark, 0.5);
-    g.fillRect(x, PX * 4, PX, height * PX - PX * 8);
+  g.strokeRect(0, 0, w * PX, h * PX);
+  for (let x = PX * 4; x < w * PX; x += PX * 4) {
+    g.fillStyle(pal.dark, 0.5);
+    g.fillRect(x, PX * 4, PX, h * PX - PX * 8);
   }
-  g.generateTexture(key, width * PX, height * PX);
+  g.generateTexture(key, w * PX, h * PX);
   g.destroy();
 }
 
 export function makeObstacles(scene: Phaser.Scene): void {
-  // 集装箱 (绿/蓝) — 最硬
-  makeBoxArt(scene, 'obstacle-container', 16, 10, {
-    base: 0x2e7d32,
-    dark: 0x1b5e20,
-    light: 0x4caf50,
-  });
-
-  // 汽车 (红/蓝/黄) — 中等硬度
-  makeBoxArt(scene, 'obstacle-car-red', 24, 12, {
-    base: 0xc62828,
-    dark: 0x8e1414,
-    light: 0xef5350,
-  });
-  makeBoxArt(scene, 'obstacle-car-blue', 24, 12, {
-    base: 0x1565c0,
-    dark: 0x0d47a1,
-    light: 0x42a5f5,
-  });
-
-  // 油桶 (灰) — 弱, 可打爆
-  makeBoxArt(scene, 'obstacle-barrel', 8, 10, {
-    base: 0x616161,
-    dark: 0x424242,
-    light: 0x9e9e9e,
-    accent: 0xff5722,
-  });
-
-  // 路障 (白条纹) — 弱
+  makeBoxArt(scene, 'obstacle-container', 16, 10, { base: 0x2e7d32, dark: 0x1b5e20, light: 0x4caf50 });
+  makeBoxArt(scene, 'obstacle-car-red', 24, 12, { base: 0xc62828, dark: 0x8e1414, light: 0xef5350 });
+  makeBoxArt(scene, 'obstacle-car-blue', 24, 12, { base: 0x1565c0, dark: 0x0d47a1, light: 0x42a5f5 });
+  makeBoxArt(scene, 'obstacle-barrel', 8, 10, { base: 0x616161, dark: 0x424242, light: 0x9e9e9e });
   const g = scene.add.graphics();
   g.fillStyle(0xfafafa, 1);
   g.fillRect(0, 0, 6 * PX, 4 * PX);
   g.fillStyle(0x212121, 1);
-  for (let x = 0; x < 6 * PX; x += PX * 2) {
-    g.fillRect(x, 0, PX, 4 * PX);
-  }
+  for (let x = 0; x < 6 * PX; x += PX * 2) g.fillRect(x, 0, PX, 4 * PX);
   g.generateTexture('obstacle-cone', 6 * PX, 4 * PX);
   g.destroy();
 }
@@ -548,7 +651,6 @@ export function makeObstacles(scene: Phaser.Scene): void {
  * ============================================================ */
 
 export function makeDecorations(scene: Phaser.Scene): void {
-  // 子弹 (像素方头)
   const bg = scene.add.graphics();
   bg.fillStyle(0xffeb3b, 1);
   bg.fillRect(0, 0, 5, 2);
@@ -567,7 +669,6 @@ export function makeDecorations(scene: Phaser.Scene): void {
   bo.generateTexture('bullet-orange', 5, 2);
   bo.destroy();
 
-  // 枪口闪光
   const flash = scene.add.graphics();
   flash.fillStyle(0xfff9c4, 1);
   flash.fillCircle(6, 3, 6);
@@ -576,21 +677,17 @@ export function makeDecorations(scene: Phaser.Scene): void {
   flash.generateTexture('muzzle-flash', 12, 10);
   flash.destroy();
 
-  // 血迹粒子 (像素方块)
   const blood = scene.add.graphics();
   blood.fillStyle(0xb71c1c, 1);
   blood.fillRect(0, 0, 3, 3);
   blood.generateTexture('blood-particle', 3, 3);
   blood.destroy();
 
-  // 地面瓦片 (柏油路 + 黄线)
   const ground = scene.add.graphics();
   ground.fillStyle(0x2a2a2e, 1);
   ground.fillRect(0, 0, 64, 64);
   ground.fillStyle(0x3a3a40, 1);
-  for (let i = 0; i < 64; i += 8) {
-    ground.fillRect(0, i, 64, 1);
-  }
+  for (let i = 0; i < 64; i += 8) ground.fillRect(0, i, 64, 1);
   ground.lineStyle(2, 0xffc107, 0.5);
   ground.beginPath();
   ground.moveTo(0, 0);
@@ -599,7 +696,6 @@ export function makeDecorations(scene: Phaser.Scene): void {
   ground.generateTexture('ground-tile', 64, 64);
   ground.destroy();
 
-  // 远景: 浣熊市街道 (像素城市剪影)
   const bgArt = scene.add.graphics();
   bgArt.fillStyle(0x0a0a0c, 1);
   bgArt.fillRect(0, 0, 1280, 720);
@@ -609,13 +705,10 @@ export function makeDecorations(scene: Phaser.Scene): void {
     const bw = 80 + Math.floor(Math.random() * 80);
     const bh = 120 + Math.floor(Math.random() * 280);
     bgArt.fillRect(bx, 720 - bh - 120, bw, bh);
-    // 窗户 (随机亮)
     bgArt.fillStyle(0x3a3a42, 0.5);
     for (let wy = 720 - bh - 100; wy < 720 - 120; wy += 24) {
       for (let wx = bx + 8; wx < bx + bw - 8; wx += 20) {
-        if (Math.random() > 0.6) {
-          bgArt.fillRect(wx, wy, 10, 14);
-        }
+        if (Math.random() > 0.6) bgArt.fillRect(wx, wy, 10, 14);
       }
     }
     bgArt.fillStyle(0x1a1a20, 1);
@@ -624,23 +717,21 @@ export function makeDecorations(scene: Phaser.Scene): void {
   bgArt.generateTexture('city-bg', 1280, 720);
   bgArt.destroy();
 
-  // 地面延伸 (用于关卡地面)
   const road = scene.add.graphics();
   road.fillStyle(0x1c1c22, 1);
   road.fillRect(0, 0, 256, 120);
   road.fillStyle(0x2a2a32, 1);
   road.fillRect(0, 0, 256, 10);
   road.fillStyle(0xffc107, 0.4);
-  for (let x = 20; x < 256; x += 40) {
-    road.fillRect(x, 60, 20, 4);
-  }
+  for (let x = 20; x < 256; x += 40) road.fillRect(x, 60, 20, 4);
   road.generateTexture('road-strip', 256, 120);
   road.destroy();
 }
 
 /* ============================================================
- *  弹药箱 / 医疗包 拾取物
+ *  拾取物
  * ============================================================ */
+
 export function makePickups(scene: Phaser.Scene): void {
   const ammo = scene.add.graphics();
   ammo.fillStyle(0xffc107, 1);
@@ -662,7 +753,7 @@ export function makePickups(scene: Phaser.Scene): void {
 
 /** 一键生成所有像素素材 */
 export function generateAllPixelArt(scene: Phaser.Scene): void {
-  scene.add.text(0, 0, '', {})?.destroy(); // 防 TS unused
+  scene.add.text(0, 0, '', {})?.destroy();
   makeLeonTexture(scene);
   makeClaireTexture(scene);
   makeAdaTexture(scene);

@@ -1,22 +1,21 @@
 /**
- * 暴徒猎手风格触屏控件 + 键盘输入统一接口
- *
- * 左侧: 虚拟摇杆 (中心160px, 半径80px, 追踪单指)
- * 右侧: 三个按钮 (大尺寸): 射击/跳跃/换弹
+ * 暴徒猎手 (Huntdown) 风格触屏控件 + 键盘输入统一接口
  *
  * 关键修复:
- * - 移动端 pointer 会被 Phaser 处理, 但我们自己的 overlay (rotate-hint) 已在竖屏隐藏
- * - 按钮用 Phaser.GameObjects.Arc + Circle.setInteractive, 不依赖 DOM
- * - 每个 pointer 在 down/move/up 全程追踪, 避免多指冲突
+ * - 不使用 setScrollFactor(0), 改为每帧根据 camera.scroll 手动更新 UI 位置
+ *   → 彻底解决 scrollFactor 对象 hit area 坐标和世界坐标不匹配的问题
+ * - 摇杆 base 必须 setInteractive() 才能接收 pointerdown
+ * - 每个 pointer 全程追踪 (down→move→up), 避免多指冲突
+ * - pointerdown 阶段立即更新状态, 点击也能触发
  */
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/gameConfig';
 
 export interface InputSnapshot {
-  moveAxis: number;       // -1 左, 0 停, 1 右
-  jumpPressed: boolean;    // 单次触发 (消费后清空)
-  firing: boolean;         // 持续射击
-  reloadPressed: boolean;  // 单次触发
+  moveAxis: number;
+  jumpPressed: boolean;
+  firing: boolean;
+  reloadPressed: boolean;
   isMobile: boolean;
 }
 
@@ -30,7 +29,7 @@ export class InputManager implements InputSnapshot {
   public jumpPressed = false;
   public firing = false;
   public reloadPressed = false;
-  public isMobile;
+  public isMobile: boolean;
 
   private scene: Phaser.Scene;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
@@ -51,6 +50,15 @@ export class InputManager implements InputSnapshot {
   private btnJumpLabel?: Phaser.GameObjects.Text;
   private btnReload?: Phaser.GameObjects.Arc;
   private btnReloadLabel?: Phaser.GameObjects.Text;
+
+  // 屏幕锚点 (相对 camera view)
+  private anchors = {
+    joystickBaseX: 160,
+    joystickBaseY: 0,  // set in setup
+    fireX: 0, fireY: 0,
+    jumpX: 0, jumpY: 0,
+    reloadX: 0, reloadY: 0,
+  };
 
   private firePointer: TouchState = { pointerId: -1, active: false };
   private jumpPointer: TouchState = { pointerId: -1, active: false };
@@ -84,70 +92,78 @@ export class InputManager implements InputSnapshot {
       fire: kb.addKey('J'),
       reload: kb.addKey('R'),
     } as any;
-
     kb.on('keydown-SPACE', () => { this.jumpPressed = true; });
   }
 
   /* =========================================================
    *  暴徒猎手风格 — 左侧大摇杆 + 右侧大按钮
+   *  不用 setScrollFactor(0), 每帧手动跟随 camera
    * ========================================================= */
   private setupTouchControls(): void {
-    // 摇杆中心: 左下区域, 靠左下角留间距
+    // 摇杆中心: 左下区域
     this.joystickCenterY = GAME_HEIGHT - 160;
+    this.anchors.joystickBaseX = this.joystickCenterX;
+    this.anchors.joystickBaseY = this.joystickCenterY;
 
+    // 右侧按钮锚点 (屏幕相对坐标)
+    this.anchors.fireX = GAME_WIDTH - 150;
+    this.anchors.fireY = GAME_HEIGHT - 160;
+    this.anchors.jumpX = GAME_WIDTH - 150 - 110;
+    this.anchors.jumpY = GAME_HEIGHT - 160 - 40;
+    this.anchors.reloadX = GAME_WIDTH - 150 - 40;
+    this.anchors.reloadY = GAME_HEIGHT - 160 - 110;
+
+    // 初始位置 (camera scrollX=0 时)
     const baseX = this.joystickCenterX;
     const baseY = this.joystickCenterY;
 
     // 摇杆外圈 (透明圆 显示边界)
     this.joystickBorder = this.scene.add.circle(baseX, baseY, this.joystickRadius + 10, 0xffffff, 0.08);
     this.joystickBorder.setStrokeStyle(3, 0xffffff, 0.5);
-    this.joystickBorder.setScrollFactor(0).setDepth(1000).setInteractive();
+    this.joystickBorder.setDepth(1000).setInteractive();
 
-    // 摇杆内圈 (实际按下区域)
+    // 摇杆内圈 (**必须 setInteractive()** — 否则 pointerdown 不触发)
     this.joystickBase = this.scene.add.circle(baseX, baseY, this.joystickRadius, 0xffffff, 0.18);
     this.joystickBase.setStrokeStyle(3, 0xffffff, 0.4);
-    this.joystickBase.setScrollFactor(0).setDepth(1001);
+    this.joystickBase.setDepth(1001).setInteractive();
 
-    // 摇杆头 (可拖拽的圆球)
+    // 摇杆头 (可拖拽的圆球, 也需要 interactive 确保能接收 pointerdown)
     this.joystickKnob = this.scene.add.circle(baseX, baseY, 36, 0xffffff, 0.5);
     this.joystickKnob.setStrokeStyle(2, 0xffffff, 0.8);
-    this.joystickKnob.setScrollFactor(0).setDepth(1002);
+    this.joystickKnob.setDepth(1002).setInteractive();
 
     // ---- 右侧按钮区 ----
-    const rightX = GAME_WIDTH - 150;
-    const bottomY = GAME_HEIGHT - 160;
-
-    // 射击按钮 (最大、最醒目)
-    this.btnFire = this.makeButton(rightX, bottomY, 62, 0xff1744, '射');
-    this.btnFireLabel = this.scene.add.text(rightX, bottomY, '射', {
+    this.btnFire = this.makeButton(this.anchors.fireX, this.anchors.fireY, 62, 0xff1744, '射');
+    this.btnFireLabel = this.scene.add.text(this.anchors.fireX, this.anchors.fireY, '射', {
       fontSize: '26px', color: '#fff', fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(1005);
+    }).setOrigin(0.5).setDepth(1005);
 
-    // 跳跃按钮 (右上)
-    this.btnJump = this.makeButton(rightX - 110, bottomY - 40, 46, 0x4fc3f7, '跳');
-    this.btnJumpLabel = this.scene.add.text(rightX - 110, bottomY - 40, '跳', {
+    this.btnJump = this.makeButton(this.anchors.jumpX, this.anchors.jumpY, 46, 0x4fc3f7, '跳');
+    this.btnJumpLabel = this.scene.add.text(this.anchors.jumpX, this.anchors.jumpY, '跳', {
       fontSize: '20px', color: '#fff', fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(1005);
+    }).setOrigin(0.5).setDepth(1005);
 
-    // 换弹按钮 (右下)
-    this.btnReload = this.makeButton(rightX - 40, bottomY - 110, 42, 0xffc107, '弹');
-    this.btnReloadLabel = this.scene.add.text(rightX - 40, bottomY - 110, '弹', {
+    this.btnReload = this.makeButton(this.anchors.reloadX, this.anchors.reloadY, 42, 0xffc107, '弹');
+    this.btnReloadLabel = this.scene.add.text(this.anchors.reloadX, this.anchors.reloadY, '弹', {
       fontSize: '18px', color: '#000', fontStyle: 'bold',
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(1005);
+    }).setOrigin(0.5).setDepth(1005);
 
-    // 绑定 pointer 事件 (每个按钮独立追踪)
     this.bindJoystick();
     this.bindButton(this.btnFire, this.firePointer, 'fire');
     this.bindButton(this.btnJump, this.jumpPointer, 'jump');
     this.bindButton(this.btnReload, this.reloadPointer, 'reload');
+
+    // 第一次跟随 camera
+    this.followCamera();
   }
 
-  private makeButton(x: number, y: number, radius: number, color: number, label: string): Phaser.GameObjects.Arc {
+  private makeButton(x: number, y: number, radius: number, color: number, _label: string): Phaser.GameObjects.Arc {
     const btn = this.scene.add.circle(x, y, radius, color, 0.45);
     btn.setStrokeStyle(3, color, 0.9);
-    btn.setScrollFactor(0).setDepth(1004);
+    btn.setDepth(1004);
+    // 用 Circle shape 做 hit area, 坐标用 local (0,0) — Phaser 会自动加按钮的 world position
     btn.setInteractive(
-      new Phaser.Geom.Circle(x, y, radius),
+      new Phaser.Geom.Circle(0, 0, radius),
       Phaser.Geom.Circle.Contains
     );
     (btn as any)._radius = radius;
@@ -155,18 +171,55 @@ export class InputManager implements InputSnapshot {
     return btn;
   }
 
+  /** 每帧根据 camera scroll 更新所有 UI 元素的 world position */
+  private followCamera(): void {
+    const cam = this.scene.cameras.main;
+    const ox = cam.scrollX;
+    const oy = cam.scrollY;
+
+    // 摇杆
+    const jx = this.anchors.joystickBaseX + ox;
+    const jy = this.anchors.joystickBaseY + oy;
+    this.joystickBase?.setPosition(jx, jy);
+    this.joystickBorder?.setPosition(jx, jy);
+    // knob 位置也要更新, 先算相对偏移
+    if (this.joystickKnob) {
+      const dx = this.joystickKnob.x - (this.joystickBase?.x ?? jx);
+      const dy = this.joystickKnob.y - (this.joystickBase?.y ?? jy);
+      this.joystickKnob.setPosition(jx + dx, jy + dy);
+    }
+
+    // 按钮
+    const updateBtn = (btn?: Phaser.GameObjects.Arc, label?: Phaser.GameObjects.Text, ax = 0, ay = 0) => {
+      const wx = ax + ox;
+      const wy = ay + oy;
+      btn?.setPosition(wx, wy);
+      label?.setPosition(wx, wy);
+    };
+
+    updateBtn(this.btnFire, this.btnFireLabel, this.anchors.fireX, this.anchors.fireY);
+    updateBtn(this.btnJump, this.btnJumpLabel, this.anchors.jumpX, this.anchors.jumpY);
+    updateBtn(this.btnReload, this.btnReloadLabel, this.anchors.reloadX, this.anchors.reloadY);
+  }
+
   private bindJoystick(): void {
     if (!this.joystickBase || !this.joystickKnob) return;
 
-    this.joystickBase.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+    const onDown = (pointer: Phaser.Input.Pointer) => {
       if (this.joystickPointer.active) return;
       this.joystickPointer.pointerId = pointer.id;
       this.joystickPointer.active = true;
       this.updateJoystick(pointer);
+      // 视觉反馈: 边框加粗
+      this.joystickBorder?.setStrokeStyle(4, 0xffffff, 0.9);
       this.scene.input.on('pointermove', this.handleJoystickMove, this);
       this.scene.input.on('pointerup', this.handleJoystickUp, this);
       this.scene.input.on('pointerupoutside', this.handleJoystickUp, this);
-    });
+    };
+
+    this.joystickBase.on('pointerdown', onDown);
+    this.joystickKnob.on('pointerdown', onDown);
+    this.joystickBorder?.on('pointerdown', onDown);
   }
 
   private handleJoystickMove(pointer: Phaser.Input.Pointer): void {
@@ -179,72 +232,71 @@ export class InputManager implements InputSnapshot {
     this.joystickPointer.active = false;
     this.joystickPointer.pointerId = -1;
     this.moveAxis = 0;
-    this.joystickKnob?.setPosition(this.joystickCenterX, this.joystickCenterY);
+    const jx = this.anchors.joystickBaseX + this.scene.cameras.main.scrollX;
+    const jy = this.anchors.joystickBaseY + this.scene.cameras.main.scrollY;
+    this.joystickKnob?.setPosition(jx, jy);
+    this.joystickBorder?.setStrokeStyle(3, 0xffffff, 0.5);
     this.scene.input.off('pointermove', this.handleJoystickMove, this);
     this.scene.input.off('pointerup', this.handleJoystickUp, this);
     this.scene.input.off('pointerupoutside', this.handleJoystickUp, this);
   }
 
   private updateJoystick(pointer: Phaser.Input.Pointer): void {
-    const dx = pointer.x - this.joystickCenterX;
-    const dy = pointer.y - this.joystickCenterY;
+    const jx = this.anchors.joystickBaseX + this.scene.cameras.main.scrollX;
+    const jy = this.anchors.joystickBaseY + this.scene.cameras.main.scrollY;
+    const dx = pointer.worldX - jx;
+    const dy = pointer.worldY - jy;
     const dist = Math.min(Math.hypot(dx, dy), this.joystickRadius);
+    if (dist < 4) {
+      this.moveAxis = 0;
+      this.joystickKnob?.setPosition(jx, jy);
+      return;
+    }
     const angle = Math.atan2(dy, dx);
     const kx = Math.cos(angle) * dist;
     const ky = Math.sin(angle) * dist;
-    this.joystickKnob?.setPosition(this.joystickCenterX + kx, this.joystickCenterY + ky);
-    // 水平轴 (横版游戏只需要左右移动)
-    const hRatio = Math.abs(kx) < 6 ? 0 : Math.sign(kx) * Math.min(1, dist / this.joystickRadius);
-    this.moveAxis = hRatio;
+    this.joystickKnob?.setPosition(jx + kx, jy + ky);
+    this.moveAxis = Math.sign(kx) * Math.min(1, dist / this.joystickRadius);
   }
 
   private bindButton(btn: Phaser.GameObjects.Arc, state: TouchState, type: 'fire' | 'jump' | 'reload'): void {
-    btn.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+    const onDown = (pointer: Phaser.Input.Pointer) => {
       if (state.active) return;
       state.active = true;
       state.pointerId = pointer.id;
-      // 视觉按压: 加深
-      (btn as Phaser.GameObjects.Arc).setScale(0.92);
+      // 视觉按压
+      btn.setScale(0.88);
+      (btn as any).setFillStyle?.((btn as any)._baseFill, 0.7);
       if (type === 'fire') this.firing = true;
       if (type === 'jump') this.jumpPressed = true;
       if (type === 'reload') this.reloadPressed = true;
-    });
-    const upHandler = (pointer: Phaser.Input.Pointer) => {
+    };
+    const onUp = (pointer: Phaser.Input.Pointer) => {
       if (!state.active || pointer.id !== state.pointerId) return;
       state.active = false;
       state.pointerId = -1;
       btn.setScale(1);
+      (btn as any).setFillStyle?.((btn as any)._baseFill, 0.45);
       if (type === 'fire') this.firing = false;
     };
-    btn.on('pointerup', upHandler);
-    btn.on('pointerupoutside', upHandler);
-    // 手指滑出按钮也应释放: 注册全局 move 检查
-    btn.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      if (!state.active || pointer.id !== state.pointerId) return;
-      const r = (btn as any)._radius;
-      const cx = btn.x, cy = btn.y;
-      const dist = Math.hypot(pointer.x - cx, pointer.y - cy);
-      if (dist > r * 1.2) {
-        // 滑出 — 继续按住 fire 不松, 但不再 jump/reload
-        if (type === 'fire') {
-          // fire 保持持续; 滑出不松开
-        } else {
-          state.active = false;
-          state.pointerId = -1;
-          btn.setScale(1);
-        }
-      }
-    });
+    btn.on('pointerdown', onDown);
+    btn.on('pointerup', onUp);
+    btn.on('pointerupoutside', onUp);
   }
 
   /* =========================================================
-   *  每帧更新 (键盘 + 触屏混合)
+   *  每帧更新
    * ========================================================= */
   public update(): InputSnapshot {
+    // 移动端: 跟随 camera (修复 scrollFactor hit area 错位)
+    if (this.isMobile) {
+      this.followCamera();
+    }
+
     const k = this.keys;
     if (!k) return this.snapshot();
 
-    // 键盘移动 (优先级: 触屏摇杆 > 键盘)
+    // 键盘移动 (触屏摇杆 > 键盘)
     let kbAxis = 0;
     if (k.left?.isDown) kbAxis -= 1;
     if (k.right?.isDown) kbAxis += 1;
@@ -252,18 +304,15 @@ export class InputManager implements InputSnapshot {
       this.moveAxis = kbAxis !== 0 ? kbAxis : 0;
     }
 
-    // 跳跃单次触发
     if (Phaser.Input.Keyboard.JustDown(k.jump)) this.jumpPressed = true;
     if (Phaser.Input.Keyboard.JustDown((k as any).jumpSpace)) this.jumpPressed = true;
 
-    // 射击 (按住 J)
     if (k.fire?.isDown) {
       this.firing = true;
     } else if (!this.firePointer.active) {
       this.firing = false;
     }
 
-    // 换弹单次
     if (Phaser.Input.Keyboard.JustDown(k.reload)) this.reloadPressed = true;
 
     return this.snapshot();
@@ -291,7 +340,6 @@ export class InputManager implements InputSnapshot {
     };
   }
 
-  /** 场景销毁时清理 */
   public destroy(): void {
     this.joystickBase?.destroy();
     this.joystickKnob?.destroy();
