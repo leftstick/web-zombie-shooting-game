@@ -12,15 +12,15 @@ export class PreloadScene extends Phaser.Scene {
 
   preload(): void {
     // 加载外部 PNG 资源 (AI 生成的像素艺术)
-    this.load.image('player-leon', '/assets/leon.png');
-    this.load.image('player-leon-aim', '/assets/leon.png');
-    this.load.image('player-claire', '/assets/claire.png');
-    this.load.image('player-claire-aim', '/assets/claire.png');
-    this.load.image('player-ada', '/assets/ada.png');
-    this.load.image('player-ada-aim', '/assets/ada.png');
-    this.load.image('zombie-normal', '/assets/zombie.png');
-    this.load.image('zombie-fast', '/assets/zombie.png');
-    this.load.image('zombie-tank', '/assets/zombie.png');
+    this.load.image('player-leon', './assets/leon.png');
+    this.load.image('player-leon-aim', './assets/leon.png');
+    this.load.image('player-claire', './assets/claire.png');
+    this.load.image('player-claire-aim', './assets/claire.png');
+    this.load.image('player-ada', './assets/ada.png');
+    this.load.image('player-ada-aim', './assets/ada.png');
+    this.load.image('zombie-normal', './assets/zombie.png');
+    this.load.image('zombie-fast', './assets/zombie.png');
+    this.load.image('zombie-tank', './assets/zombie.png');
 
     // 进度条
     const barW = 480;
