@@ -1,0 +1,20 @@
+{
+  "name": "biohazard-side-scroller",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "生化危机主题横版过关枪战游戏 - 支持PC与移动端(横屏)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vite": "^5.2.10"
+  }
+}
