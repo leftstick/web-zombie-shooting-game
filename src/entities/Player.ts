@@ -53,9 +53,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(40);
-    // 侧视角角色: 碰撞体窄而高
-    this.body!.setSize(this.width * 0.35, this.height * 0.8);
-    this.body!.setOffset(this.width * 0.25, this.height * 0.15);
+    // 侧视角角色 (40×55 逻辑像素 → 120×165 屏幕像素)
+    // 碰撞体: 躯干部分, 窄而高, 避开前伸的手臂和枪
+    this.body!.setSize(this.width * 0.32, this.height * 0.72);
+    this.body!.setOffset(this.width * 0.30, this.height * 0.18);
     this.setCollideWorldBounds(true);
     this.setBounce(0);
 

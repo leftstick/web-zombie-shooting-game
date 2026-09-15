@@ -1,29 +1,27 @@
 /**
- * 像素艺术生成器 —— 暴徒猎手 (Huntdown) 风格
+ * 像素艺术生成器 —— 暴徒猎手 + 生化危机风格
  *
- * Huntdown 风格要点:
- *   - 24×32 逻辑像素 (PX=3, 实际 72×96)
- *   - 侧面视角, 身体前倾 (射击姿态)
- *   - 持枪手臂前伸, 枪口指向前方
- *   - 4-5 层着色 (高光/主色/中间/阴影/暗部)
- *   - 轮廓线 (1px 深色描边) 保证 silhouette 清晰
- *   - 头发/脸型/服装差异化 — 远看能认出是谁
+ * 核心升级:
+ *   - 40×60 逻辑像素 (PX=3 → 120×180 屏幕像素) — 足够放细节
+ *   - 角色部件化: 头/颈/躯干(战术背心)/腰带+Pouch/2臂持枪/2腿+护膝/靴
+ *   - 5 层着色: 轮廓 → 阴影 → 主色 → 高光 → 特亮
+ *   - 双手握持枪支 (参考图标志性姿态)
+ *   - 战术装备完整: 防弹衣装甲板/腰带 pouch/护膝/护腕
+ *   - 精确像素点阵 (每列每行手动设计, 不再程序生成矩形)
  */
 import Phaser from 'phaser';
 
 export const PX = 3;
 
 /* ============================================================
- *  通用绘图工具
+ *  渲染工具: 把字符串数组按调色板渲染成纹理
+ *  '.' = 透明, 其他字符从 palette 查颜色
  * ============================================================ */
-
-/** 画像素点阵: 'X'=主色 '.'=透明, '1'='2'='3'=各层色 */
-function drawArt(
+function renderArt(
   gfx: Phaser.GameObjects.Graphics,
   art: string[],
   palette: Record<string, number>,
-  pxSize: number = PX,
-  ox = 0, oy = 0
+  px = PX
 ): { w: number; h: number } {
   const rows = art.length;
   const cols = Math.max(...art.map(r => r.length));
@@ -35,531 +33,585 @@ function drawArt(
       const color = palette[ch];
       if (color === undefined) continue;
       gfx.fillStyle(color, 1);
-      gfx.fillRect(ox + x * pxSize, oy + y * pxSize, pxSize, pxSize);
+      gfx.fillRect(x * px, y * px, px, px);
     }
   }
-  return { w: cols * pxSize, h: rows * pxSize };
+  return { w: cols * px, h: rows * px };
 }
 
 /* ============================================================
- *  角色模板 (24×32, 面向右)
- *  Huntdown 风格: 前倾 + 持枪前伸 + 多层着色
+ *  里昂·S·肯尼迪 — 金发 RPD 蓝制服 + 灰色战术背心 + 手枪
+ *  40×60 逻辑像素, 面向右
  *
- *  颜色代号约定:
- *    轮廓/暗部: 'K'
- *    高光:       'H'
- *    主色:       'M'
- *    阴影:       'S'
- *    眼睛白:     'W'
- *    枪口火:     'F'
+ *  调色板代号 (5 层着色):
+ *    K = 轮廓/最暗
+ *    S = 阴影
+ *    M = 主色
+ *    H = 高光
+ *    L = 特亮/反射
+ *    还有角色特定代号见下方每个 palette
  * ============================================================ */
 
-/**
- * 里昂·S·肯尼迪 — 棕发 RPD蓝背心 手枪
- * 姿态: 身体略前倾, 持枪前伸瞄准
- */
+const LEON_PALETTE: Record<string, number> = {
+  K: 0x080808,         // 轮廓
+  // 头发 (金棕)
+  hh: 0xc8a060, hm: 0x8b6838, hs: 0x5a4020,
+  // 皮肤
+  sh: 0xf4d4a8, sm: 0xe0b080, sd: 0x9a6a40,
+  // 眼白+瞳孔
+  ew: 0xffffff, ep: 0x1a3a6a,
+  // RPD 蓝制服
+  th: 0x2a4a7a, tm: 0x1a3a5c, ts: 0x0d2033,
+  // 灰色战术背心 (叠在制服外)
+  vh: 0x7a7a7a, vm: 0x4a4a4a, vs: 0x2a2a2a,
+  // 护膝/护腕 (深灰)
+  kh: 0x5a5a5a, km: 0x3a3a3a, ks: 0x1a1a1a,
+  // 腰带 + pouch
+  bh: 0x4a3520, bm: 0x2a1f10, bs: 0x151008,
+  // 枪 (手枪)
+  gh: 0x6a6a6a, gm: 0x3a3a3a, gs: 0x151515,
+  gg: 0x8a8a8a,        // 枪管金属高光
+  // 靴子
+  oh: 0x3a3a3a, om: 0x1a1a1a, os: 0x050505,
+  // 特亮
+  a: 0xffd700,         // RPD 徽章金色
+  f: 0xfff176,         // 枪口闪光
+  // 手套/枪套
+  wh: 0x3a2510, wm: 0x1a1508,
+};
+
+/* Leon 站姿 (40×60) — 像素点阵, 面向右 */
 const LEON_STAND = [
-  '........................',
-  '.....KKKKKKKK...........',  // 头发顶
-  '....KHHHHHHHK...........',  // 头发高光
-  '....KHHMMMMHK...........',
-  '....KMMMMMMK............',  // 头
-  '....KMMSMMMK............',
-  '....KMSSMSSK............',  // 眼
-  '....KWMSWMSK............',  // 眼白+瞳孔
-  '....KMSSSSSK............',
-  '....KMMMMMMK............',  // 脸
-  '....KSSSSSSK............',
-  '.....KKKKKKK............',  // 下巴
-  '......KKKK..............',  // 脖子
-  '....KKKMMMMKK...........',  // 肩
-  '...KHMMMMMMMK...........',  // 躯干 (蓝)
-  '...KMMMMMMMMK..KKKKK....',  // 手臂前伸
-  '...KMMSSSSMMK.KHHHHHK...',  // 手枪
-  '...KMMSSSSMMKKHHHHHHK...',
-  '...KMMMMMMMMKKMMMMMMK...',
-  '....KMMMMMMMKKMMMMMMK...',
-  '....KMMMMMMMKKKKKKKKK...',
-  '....KKKSSSSK............',
-  '.....KMMMMK.............',  // 腰带
-  '.....KMMMMK.............',
-  '....KMMMMMMK............',  // 裤
-  '....KMMMMMMK............',
-  '....KMSSSSMK............',
-  '....KMSSSSMK............',
-  '...KKMMMMMMKK...........',  // 靴
-  '...KKKKKKKKKK...........',
-  '........................',
-  '........................',
+  // 0123456789012345678901234567890123456789
+  '........................................', // 0
+  '......KKKKKKKKKK.......................', // 1 头发顶
+  '....KhhhhhhhhhhhhK.....................', // 2
+  '....KhhhhhhhhhhmK......................', // 3 金发高光
+  '....KhhhhhmhhmhmK.....................', // 4
+  '....KhhmmmmmmmmK.......................', // 5 额头
+  '....KhhmmmmmmmmK.......................', // 6 金发刘海遮额头
+  '....KshshmmmssmK.......................', // 7 眼 (阴影)
+  '....KseepsmmessK.......................', // 8 眼白+瞳孔
+  '....KssmmmmmssK........................', // 9 眼下方
+  '....KshmmmmshK.........................', // 10 脸颊
+  '....KhhmmmmmhK.........................', // 11 嘴唇
+  '......KKKKKKK..........................', // 12 下巴
+  '.......KKKK............................', // 13 脖子
+  '....KKKKmmmmKKKK.......................', // 14 肩
+  '...KvvvvvvvvvvvK........KKKKKK.........', // 15 战术背心+手臂
+  '...KvvvvvvvvvvvK.......KgggghhK........', // 16 枪开始
+  '...KvsvsbsvsbsvK.......KgggghhK........', // 17 背心装甲板 + 枪身
+  '...KvvvvvvvvvvvK.......KgggggggK.......', // 18
+  '...KvvvvvvvvvvvK.......KggggggggK......', // 19 枪管延伸
+  '...KvvvvvvvvvvvK.......KggggggggK......', // 20
+  '...KvvvvvvvvvvvK.......KgggggggK.......', // 21
+  '...KvvvvvvvvvvvK........KgggggK........', // 22
+  '....KsssssssssK.........KKKKKK.........', // 23 手臂/枪过渡
+  '....KwwwwwwwwwK........................', // 24 另一只手 (腰侧)
+  '....KKKKKKKKKKK........................', // 25 躯干底
+  '....KbhbhbhbhbK........................', // 26 腰带
+  '....KbhbhbhbhbK........................', // 27 腰带 pouch
+  '....KKKKKKKKKKK........................', // 28
+  '....KtmtmtmtmtmK........................', // 29 裤上
+  '....KtmtmtmtmtmK........................', // 30
+  '....KtmtmtmtmtmK........................', // 31
+  '....KtmtmtmtmtmK........................', // 32
+  '...KkkkkkkkkkkkK........................', // 33 护膝
+  '...KkmkmkmkmkmK........................', // 34 护膝细节
+  '...KkkkkkkkkkkkK........................', // 35
+  '....KtmtmtmtmtmK........................', // 36 裤下
+  '....KtmtmtmtmtmK........................', // 37
+  '....KtmtmtmtmtmK........................', // 38
+  '....KtmtmtmtmtmK........................', // 39
+  '....KtmtmtmtmtmK........................', // 40
+  '....KtmtmtmtmtmK........................', // 41
+  '....KmtmtmtmtmtmK.......................', // 42 前腿 (靠近镜头)
+  '....KmtmtmtmtmtmK.......................', // 43
+  '....KKKKKKKKKKKK........................', // 44 裤脚
+  '...KoooooooooooK........................', // 45 靴顶
+  '...KooomooomooK........................', // 46 鞋带
+  '...KooomooomooK........................', // 47
+  '...KoooooooooooK........................', // 48
+  '...KoooooooooooK........................', // 49 靴身
+  '...KosKosKosKosK........................', // 50 鞋底
+  '...KosKosKosKosK........................', // 51
+  '....KKKKKKKKKKK.........................', // 52
+  '........................................', // 53
+  '........................................', // 54
+  '........................................', // 55
+  '........................................', // 56
+  '........................................', // 57
+  '........................................', // 58
+  '........................................', // 59
 ];
 
+/* Leon 瞄准姿势 — 身体前倾, 枪前伸更远, 枪口闪光 */
 const LEON_AIM = [
-  '........................',
-  '.....KKKKKKKK...........',
-  '....KHHHHHHHK...........',
-  '....KHHMMMMHK...........',
-  '....KMMMMMMK............',
-  '....KMMSMMMK............',
-  '....KMSSMSSK............',
-  '....KWMSWMSK............',
-  '....KMSSSSSK............',
-  '....KMMMMMMK............',
-  '....KSSSSSSK............',
-  '.....KKKKKKK............',
-  '......KKKK..............',
-  '...KKKKMMMMKK...........',  // 肩前倾
-  '..KHMMMMMMMMKKKKKKK.....',  // 躯干
-  '..KMMMMMMMMMMHHHHHHK....',  // 手臂+枪前伸
-  '..KMMSSSSMMMMHHHHHHHK...',
-  '..KMMSSSSMMMMMMMMMMMK...',
-  '..KMMMMMMMMMMMMMMMMMK...',
-  '...KMMMMMMMMK.FFFFFF....',  // 枪口闪光
-  '...KMMMMMMMMK.KKKKKK....',
-  '....KKSSSSSK............',
-  '.....KMMMMK.............',
-  '.....KMMMMK.............',
-  '....KMMMMMMK............',
-  '....KMMMMMMK............',
-  '....KMSSSSMK............',
-  '....KMSSSSMK............',
-  '...KKMMMMMMKK...........',
-  '...KKKKKKKKKK...........',
-  '........................',
-  '........................',
+  '........................................',
+  '......KKKKKKKKKK.......................',
+  '....KhhhhhhhhhhhhK.....................',
+  '....KhhhhhhhhhhmK......................',
+  '....KhhhhhmhhmhmK.....................',
+  '....KhhmmmmmmmmK.......................',
+  '....KhhmmmmmmmmK.......................',
+  '....KshshmmmssmK.......................',
+  '....KseepsmmessK.......................',
+  '....KssmmmmmssK........................',
+  '....KshmmmmshK.........................',
+  '....KhhmmmmmhK.........................',
+  '......KKKKKKK..........................',
+  '.......KKKK............................',
+  '....KKKKmmmmKKKKKKKKKKKKKKKKKKKK.......', // 14 肩前倾
+  '...KvvvvvvvvvvvvvvvvvvvvvvvvvvvK.......', // 15 躯干+手臂完全前伸
+  '...KvvvvvvvvvvvvvgggggggggggggggK......', // 16 枪全长
+  '...KvsvsbsvsbsvvvgggggggggggggggK......', // 17
+  '...KvvvvvvvvvvvvvgggggggggggggggK......', // 18
+  '...KvvvvvvvvvvvvvgggggggggggggggK......', // 19
+  '...KvvvvvvvvvvvvvgggggggggggggggK......', // 20
+  '...KvvvvvvvvvvvvvgggggggggggggggK......', // 21
+  '...KvvvvvvvvvvvvvgggggggggggggggK......', // 22
+  '...KssssssssssssssKKKKKKKKKKKf........', // 23 枪口闪光 f
+  '...KwwwwwwwwwwwwwKKKKKKKKKKKf..........', // 24
+  '....KKKKKKKKKKKKKKKKKKKKKKKKKK.........', // 25
+  '....KbhbhbhbhbK........................', // 26 腰带
+  '....KbhbhbhbhbK........................', // 27
+  '....KKKKKKKKKKK........................', // 28
+  '....KtmtmtmtmtmK........................', // 29 裤
+  '....KtmtmtmtmtmK........................', // 30
+  '....KtmtmtmtmtmK........................', // 31
+  '....KtmtmtmtmtmK........................', // 32
+  '...KkkkkkkkkkkkK........................', // 33 护膝
+  '...KkmkmkmkmkmK........................', // 34
+  '...KkkkkkkkkkkkK........................', // 35
+  '....KtmtmtmtmtmK........................', // 36
+  '....KtmtmtmtmtmK........................', // 37
+  '....KtmtmtmtmtmK........................', // 38
+  '....KtmtmtmtmtmK........................', // 39
+  '....KtmtmtmtmtmK........................', // 40
+  '....KtmtmtmtmtmK........................', // 41
+  '....KmtmtmtmtmtmK.......................', // 42 前腿
+  '....KmtmtmtmtmtmK.......................', // 43
+  '....KKKKKKKKKKKK........................', // 44
+  '...KoooooooooooK........................', // 45 靴
+  '...KooomooomooK........................', // 46
+  '...KooomooomooK........................', // 47
+  '...KoooooooooooK........................', // 48
+  '...KoooooooooooK........................', // 49
+  '...KosKosKosKosK........................', // 50 鞋底
+  '...KosKosKosKosK........................', // 51
+  '....KKKKKKKKKKK.........................', // 52
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
 ];
 
-/**
- * 克莱尔·雷德菲尔德 — 红马尾 红夹克 冲锋枪
- */
+/* ============================================================
+ *  克莱尔·雷德菲尔德 — 红马尾 红夹克 黑裤 冲锋枪
+ * ============================================================ */
+const CLAIRE_PALETTE: Record<string, number> = {
+  K: 0x080808,
+  // 红头发 (马尾)
+  hh: 0xef5350, hm: 0xc62828, hs: 0x8e1414,
+  // 皮肤
+  sh: 0xf4d4a8, sm: 0xe0b080, sd: 0x9a6a40,
+  ew: 0xffffff, ep: 0x2e7d32,  // 绿色眼睛
+  // 红夹克
+  th: 0xef5350, tm: 0xc62828, ts: 0x8e1414,
+  // 黑色内搭
+  jh: 0x4a4a4a, jm: 0x1a1a1a, js: 0x050505,
+  // 护膝
+  kh: 0x3a3a3a, km: 0x1a1a1a, ks: 0x050505,
+  // 腰带
+  bh: 0x3a3a3a, bm: 0x1a1a1a, bs: 0x050505,
+  // 冲锋枪 (MP5 风格)
+  gh: 0x5a5a5a, gm: 0x2a2a2a, gs: 0x0a0a0a,
+  gg: 0x7a7a7a,
+  // 靴
+  oh: 0x3a2510, om: 0x1a0e08, os: 0x050505,
+  // 手套
+  wh: 0x1a1a1a, wm: 0x050505,
+  // 裤 (黑)
+  ph: 0x3a3a3a, pm: 0x1a1a1a, ps: 0x050505,
+  f: 0xfff176,
+};
+
 const CLAIRE_STAND = [
-  '........................',
-  '......KKKKKK............',  // 头发顶
-  '.....KHHHHHHK...........',
-  '.....KHHMMMMK...........',
-  '.....KMMMMMMK.KKK.......',  // 马尾
-  '.....KMMMMMMK.HHK.......',
-  '.....KMMSSMMK.KKK.......',
-  '.....KWMSWMSK.KKK.......',
-  '.....KMMMMMMK.KKK.......',
-  '.....KMMMMMMK.KKK.......',
-  '.....KSSSSSSK.KKK.......',
-  '......KKKKKKK...........',
-  '.......KKKK.............',
-  '....KKKMMMMMKK..........',  // 肩
-  '...KHHMMMMMMMK..KKKK....',  // 红夹克
-  '...KHHMMMMMMMMKHHHHK....',  // 手臂+枪
-  '...KMMSSSSMMMMKHHHHK....',
-  '...KMMSSSSMMMMKMMMMK....',
-  '...KMMMMMMMMMMKMMMMK....',
-  '....KMMMMMMMMK.KKKKK....',
-  '....KMMMMMMMMK..........',
-  '....KKKSSSSKK...........',
-  '.....KMMMMK.............',
-  '.....KMMMMK.............',
-  '....KMMMMMMK............',  // 黑裤
-  '....KMMMMMMK............',
-  '....KMSSSSMK............',
-  '....KMSSSSMK............',
-  '...KKMMMMMMKK...........',
-  '...KKKKKKKKKK...........',
-  '........................',
-  '........................',
+  '........................................',
+  '......KKKKKKKK..........................', // 0 头发顶
+  '....KhhhhhhhhK..........................',
+  '....KhhhhhhhhK..........................',
+  '....KhhhhhhmhK.....KKK.................', // 4 马尾开始
+  '....KhhhhmmmmK.....KKK.................',
+  '....KhhhmmmmmmK....KKK.................',
+  '....KshshmmssmK....KKK.................',
+  '....KseepsmmessK...KKK.................', // 8 绿眼睛
+  '....KssmmmmmsK.....KKK.................',
+  '....KshmmmmshK.....KKK.................',
+  '....KhhmmmmhK......KKK.................',
+  '......KKKKKKK.......KKK................',
+  '.......KKKK........KKKKK...............', // 13 脖子+马尾
+  '....KKKKmmmmKKK....KKKKK...............', // 14 肩
+  '...KtttttttttttK...KKKKK...KKKKKK......', // 15 红夹克
+  '...KttttttttttttK..KKKKK..KgggghhK.....', // 16 手臂+SMG
+  '...Ktstststststsk..KKKKK..KgggghhK.....', // 17 夹克拉链+枪身
+  '...KttttttttttttK..KKKKK..KggggggK.....', // 18
+  '...KttttttttttttK..KKKKK..KggggggK.....', // 19
+  '...KttttttttttttK..KKKKK..KggggggK.....', // 20
+  '...KttttttttttttK..KKKKK..KKKKKKKK.....', // 21
+  '...KttttttttttttK..KKKKK...............', // 22
+  '....KssssssssssK...KKKKK...............', // 23
+  '....KwwwwwwwwwwK........................', // 24 手
+  '....KKKKKKKKKKK........................', // 25
+  '....KbhbhbhbhbK........................', // 26 腰带
+  '....KKKKKKKKKKK........................', // 27
+  '....KpmpmpmpmpmK........................', // 28 黑裤
+  '....KpmpmpmpmpmK........................', // 29
+  '....KpmpmpmpmpmK........................', // 30
+  '....KpmpmpmpmpmK........................', // 31
+  '...KkkkkkkkkkkkK........................', // 32 护膝
+  '...KkmkmkmkmkmK........................', // 33
+  '...KkkkkkkkkkkkK........................', // 34
+  '....KpmpmpmpmpmK........................', // 35
+  '....KpmpmpmpmpmK........................', // 36
+  '....KpmpmpmpmpmK........................', // 37
+  '....KpmpmpmpmpmK........................', // 38
+  '....KpmpmpmpmpmK........................', // 39
+  '....KpmpmpmpmpmK........................', // 40
+  '....KpmpmpmpmpmK........................', // 41
+  '....KpmpmpmpmpmK........................', // 42
+  '....KpmpmpmpmpmK........................', // 43
+  '....KKKKKKKKKKK........................', // 44
+  '...KoooooooooooK........................', // 45 靴
+  '...KooomooomooK........................', // 46
+  '...KooomooomooK........................', // 47
+  '...KoooooooooooK........................', // 48
+  '...KosKosKosKosK........................', // 49
+  '...KosKosKosKosK........................', // 50
+  '....KKKKKKKKKKK.........................', // 51
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
 ];
 
 const CLAIRE_AIM = [
-  '........................',
-  '......KKKKKK............',
-  '.....KHHHHHHK...........',
-  '.....KHHMMMMK...........',
-  '.....KMMMMMMK.KKK.......',
-  '.....KMMMMMMK.HHK.......',
-  '.....KMMSSMMK.KKK.......',
-  '.....KWMSWMSK.KKK.......',
-  '.....KMMMMMMK.KKK.......',
-  '.....KMMMMMMK.KKK.......',
-  '.....KSSSSSSK.KKK.......',
-  '......KKKKKKK...........',
-  '.......KKKK.............',
-  '...KKKKMMMMMMK..........',
-  '..KHHMMMMMMMMKKKKKKKK...',
-  '..KHHMMMMMMMMMMHHHHHHK..',
-  '..KMMSSSSMMMMMMHHHHHHK..',
-  '..KMMSSSSMMMMMMMMMMMMK..',
-  '..KMMMMMMMMMMMMMMMMMMK..',
-  '...KMMMMMMMMMMFFFFFF....',  // 枪口闪光
-  '...KMMMMMMMMMMKKKKKK....',
-  '....KKSSSSSK............',
-  '.....KMMMMK.............',
-  '.....KMMMMK.............',
-  '....KMMMMMMK............',
-  '....KMMMMMMK............',
-  '....KMSSSSMK............',
-  '....KMSSSSMK............',
-  '...KKMMMMMMKK...........',
-  '...KKKKKKKKKK...........',
-  '........................',
-  '........................',
+  '........................................',
+  '......KKKKKKKK..........................',
+  '....KhhhhhhhhK..........................',
+  '....KhhhhhhhhK..........................',
+  '....KhhhhhhmhK.....KKK.................',
+  '....KhhhhmmmmK.....KKK.................',
+  '....KhhhmmmmmmK....KKK.................',
+  '....KshshmmssmK....KKK.................',
+  '....KseepsmmessK...KKK.................',
+  '....KssmmmmmsK.....KKK.................',
+  '....KshmmmmshK.....KKK.................',
+  '....KhhmmmmhK......KKK.................',
+  '......KKKKKKK.......KKK................',
+  '.......KKKK........KKKKK...............',
+  '....KKKKmmmmKKK....KKKKKKKKKKKKKKKKKK..', // 14 肩前倾
+  '...KtttttttttttttttttttttttttttKKKKKKK.', // 15 夹克+手臂+SMG
+  '...KtttttttttttttgggggggggggggggggKKKKK', // 16
+  '...KtstststststttgggggggggggggggggKKKKK', // 17
+  '...KtttttttttttttgggggggggggggggggKKKKK', // 18
+  '...KtttttttttttttgggggggggggggggggKKKKK', // 19
+  '...KtttttttttttttgggggggggggggggggKKKKK', // 20
+  '...KtttttttttttttgggggggggggggggggKKKKK', // 21
+  '...KtttttttttttttgggggggggggggggggKKKKK', // 22
+  '...KsssssssssssssKKKKKKKKKKKKKKKf......', // 23 枪口闪光
+  '...KwwwwwwwwwwwwwKKKKKKKKKKKKKKKf......', // 24
+  '....KKKKKKKKKKKKKKKKKKKKKKKKKKKKKK.....', // 25
+  '....KbhbhbhbhbK........................',
+  '....KKKKKKKKKKK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '...KkkkkkkkkkkkK........................',
+  '...KkmkmkmkmkmK........................',
+  '...KkkkkkkkkkkkK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KKKKKKKKKKK........................',
+  '...KoooooooooooK........................',
+  '...KooomooomooK........................',
+  '...KooomooomooK........................',
+  '...KoooooooooooK........................',
+  '...KosKosKosKosK........................',
+  '...KosKosKosKosK........................',
+  '....KKKKKKKKKKK.........................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
 ];
 
-/**
- * 艾达·王 — 黑发髻 红旗袍 左轮手枪
- */
+/* ============================================================
+ *  艾达·王 — 黑发髻 红旗袍 左轮手枪
+ * ============================================================ */
+const ADA_PALETTE: Record<string, number> = {
+  K: 0x080808,
+  // 黑发
+  hh: 0x3a3a3a, hm: 0x1a1a1a, hs: 0x050505,
+  // 皮肤
+  sh: 0xf4d4a8, sm: 0xe0b080, sd: 0x9a6a40,
+  ew: 0xffffff, ep: 0xb71c1c,  // 红眼
+  // 红旗袍
+  th: 0xd32f2f, tm: 0xb71c1c, ts: 0x7f1010,
+  // 腰带
+  bh: 0x3a3a3a, bm: 0x1a1a1a, bs: 0x050505,
+  // 左轮 (金属色)
+  gh: 0x8d6e63, gm: 0x3e2723, gs: 0x1a0e08,
+  gg: 0xbdbdbd,
+  // 靴
+  oh: 0x3a2510, om: 0x1a0e08, os: 0x050505,
+  // 裤 (黑丝)
+  ph: 0x2a2a2a, pm: 0x0a0a0a, ps: 0x000000,
+  // 手套
+  wh: 0x1a1a1a, wm: 0x050505,
+  // 旗袍盘扣等
+  a: 0xffd700,
+  f: 0xfff176,
+};
+
 const ADA_STAND = [
-  '........................',
-  '....KKKK................',  // 发髻
-  '...KHHHHK...............',
-  '...KMMMMK...............',
-  '....KKKKK...............',
-  '.....KKKKKK.............',  // 头
-  '....KHHHHHHK............',
-  '....KHHMMMMHK...........',
-  '....KMMSSMMMK...........',
-  '....KWMSWMSK............',
-  '....KMMMMMMMK...........',
-  '....KMMMMMMMK...........',
-  '.....KKKKKKKK...........',
-  '......KKKK..............',
-  '....KKKMMMMMKK..........',  // 旗袍肩
-  '...KHHMMMMMMMK..KKK.....',  // 旗袍身体
-  '...KHHMMMMMMMMKHHHK.....',  // 手臂+左轮
-  '...KMMSSSSMMMMKHHHK.....',
-  '...KMMSSSSMMMMKMMMK.....',
-  '...KMMMMMMMMMMKMMMK.....',
-  '....KMMMMMMMMMKKKKK.....',
-  '....KMMMMMMMMMK.........',
-  '....KKKKSSSKKKK.........',
-  '......KMMMK.............',
-  '......KMMMK.............',
-  '.....KMMMMMK............',
-  '.....KMMMMMK............',
-  '.....KMSSSMK............',
-  '.....KMSSSMK............',
-  '....KKMMMMMKK...........',
-  '....KKKKKKKKK...........',
-  '........................',
+  '........................................',
+  '....KKKK................................', // 0 发髻
+  '...KhhhhK...............................',
+  '...KhhhhK...............................',
+  '...KhhhhK...............................',
+  '....KKKKK...............................',
+  '.....KKKKKK.............................', // 5 头开始
+  '....KhhhhhhhK...........................',
+  '....KhhhmmmmhK..........................',
+  '....KhhmmmmmmK..........................',
+  '....KshshmmssmK..........................',
+  '....KseepsmmessK.........................', // 10 红眼
+  '....KssmmmmmssK..........................',
+  '....KshmmmmshK...........................',
+  '....KhhmmmmhK............................',
+  '......KKKKKKK...........................',
+  '.......KKKK.............................', // 16 脖子
+  '....KKKKmmmmKKKK........................', // 17 肩
+  '...Ktttttttttttk...KKKKK................', // 18 旗袍
+  '...KttttttttttttK..KggghhK..............', // 19 手臂+左轮
+  '...Ktstststststsk..KggghhK..............', // 20 旗袍盘扣
+  '...Kttttttttttttk..KgggggK..............',
+  '...Kttttttttttttk..KgggggK..............',
+  '...Kttttttttttttk..KgggggK..............',
+  '...Kttttttttttttk..KKKKKKK..............',
+  '...Kttttttttttttk.......................',
+  '...Kttttttttttttk.......................',
+  '....KssssssssssK........................',
+  '....KwwwwwwwwwK.........................',
+  '....KKKKKKKKKKK.........................', // 28 腰带
+  '....KbhbhbhbhbK.........................',
+  '....KbhbhbhbhbK.........................',
+  '....KKKKKKKKKKK.........................',
+  '....KtmtmtmtmtmK.........................', // 32 旗袍下
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KKKKKKKKKKK.........................', // 44 旗袍开衩
+  '....KpmpmpmpmpmK........................', // 45 黑丝腿
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KKKKKKKKKKK.........................',
+  '...KoooooooooooK........................', // 51 靴
+  '...KooomooomooK........................',
+  '...KoooooooooooK........................',
+  '...KosKosKosKosK........................',
+  '....KKKKKKKKKKK.........................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
 ];
 
 const ADA_AIM = [
-  '........................',
-  '....KKKK................',
-  '...KHHHHK...............',
-  '...KMMMMK...............',
-  '....KKKKK...............',
-  '.....KKKKKK.............',
-  '....KHHHHHHK............',
-  '....KHHMMMMHK...........',
-  '....KMMSSMMMK...........',
-  '....KWMSWMSK............',
-  '....KMMMMMMMK...........',
-  '....KMMMMMMMK...........',
-  '.....KKKKKKKK...........',
-  '......KKKK..............',
-  '...KKKKMMMMMMK..........',
-  '..KHHMMMMMMMMKKKKKKK....',
-  '..KHHMMMMMMMMMMHHHHHK...',
-  '..KMMSSSSMMMMMMHHHHHK...',
-  '..KMMSSSSMMMMMMMMMMMK...',
-  '..KMMMMMMMMMMMMMMMMMK...',
-  '...KMMMMMMMMMMFFFFFF....',
-  '...KMMMMMMMMMMKKKKKK....',
-  '....KMMMMMMMMMK.........',
-  '....KKKSSSKKKKK.........',
-  '......KMMMK.............',
-  '.....KMMMMMK............',
-  '.....KMMMMMK............',
-  '.....KMSSSMK............',
-  '.....KMSSSMK............',
-  '....KKMMMMMKK...........',
-  '....KKKKKKKKK...........',
-  '........................',
+  '........................................',
+  '....KKKK................................',
+  '...KhhhhK...............................',
+  '...KhhhhK...............................',
+  '...KhhhhK...............................',
+  '....KKKKK...............................',
+  '.....KKKKKK.............................',
+  '....KhhhhhhhK...........................',
+  '....KhhhmmmmhK..........................',
+  '....KhhmmmmmmK..........................',
+  '....KshshmmssmK..........................',
+  '....KseepsmmessK.........................',
+  '....KssmmmmmssK..........................',
+  '....KshmmmmshK...........................',
+  '....KhhmmmmhK............................',
+  '......KKKKKKK...........................',
+  '.......KKKK.............................',
+  '....KKKKmmmmKKKKKKKKKKKKKKKKKKK.........',
+  '...KtttttttttttttttttttttttttttKKKKKK...', // 18
+  '...KttttttttttttgggggggggggggggggKKKKK..', // 19 左轮全长
+  '...KtstststststtgggggggggggggggggKKKKK..', // 20
+  '...KttttttttttttgggggggggggggggggKKKKK..', // 21
+  '...KttttttttttttgggggggggggggggggKKKKK..', // 22
+  '...KttttttttttttgggggggggggggggggKKKKK..', // 23
+  '...KttttttttttttgggggggggggggggggKKKKK..', // 24
+  '...KttttttttttttgggggggggggggggggKKKKK..', // 25
+  '...KttttttttttttKKKKKKKKKKKKKKKKKf......', // 26 枪口闪光
+  '....KssssssssssKKKKKKKKKKKKKKKKKf.......', // 27
+  '....KwwwwwwwwwK.........................',
+  '....KKKKKKKKKKK.........................',
+  '....KbhbhbhbhbK.........................',
+  '....KKKKKKKKKKK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KtmtmtmtmtmK.........................',
+  '....KKKKKKKKKKK.........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KpmpmpmpmpmK........................',
+  '....KKKKKKKKKKK.........................',
+  '...KoooooooooooK........................',
+  '...KooomooomooK........................',
+  '...KoooooooooooK........................',
+  '...KosKosKosKosK........................',
+  '....KKKKKKKKKKK.........................',
+  '........................................',
+  '........................................',
+  '........................................',
+  '........................................',
 ];
 
 /* ============================================================
- *  角色色板 —— Huntdown 风格: 深轮廓 + 明亮主色 + 多层着色
- * ============================================================ */
-
-function makeLeonPalette(): Record<string, number> {
-  return {
-    K: 0x0d0d0d,       // 轮廓/最暗
-    H_hair: 0x8b5a2b,  // 头发高光
-    M_hair: 0x5a3a1a,  // 头发主
-    S_hair: 0x3a2010,  // 头发阴影
-    H_skin: 0xf4c9a0,  // 皮肤高光
-    M_skin: 0xe0b080,  // 皮肤主
-    S_skin: 0xa07050,  // 皮肤阴影
-    H_shirt: 0x2a4a7a, // 蓝背心高光
-    M_shirt: 0x1a3a5c, // 蓝背心主
-    S_shirt: 0x0d2033, // 蓝背心阴影
-    H_pants: 0x3a4050, // 裤高光
-    M_pants: 0x1a1f30, // 裤主
-    S_pants: 0x0d1018, // 裤阴影
-    boots: 0x1a1a1a,
-    belt: 0x3a2510,
-    H_gun: 0x5a5a5a,   // 枪管高光
-    M_gun: 0x2a2a2a,   // 枪主
-    S_gun: 0x0a0a0a,   // 枪阴影
-    W: 0xffffff,
-    eye: 0x1565c0,
-    F: 0xfff176,       // 枪口闪光
-    badge: 0xffd700,   // RPD 徽章 (预留)
-  };
-}
-
-function makeClairePalette(): Record<string, number> {
-  return {
-    K: 0x0d0d0d,
-    H_hair: 0xef5350,
-    M_hair: 0xc62828,
-    S_hair: 0x8e1414,
-    H_skin: 0xf4c9a0,
-    M_skin: 0xe0b080,
-    S_skin: 0xa07050,
-    H_shirt: 0xef5350,  // 红夹克
-    M_shirt: 0xc62828,
-    S_shirt: 0x8e1414,
-    H_pants: 0x3a3a3a,
-    M_pants: 0x212121,
-    S_pants: 0x111111,
-    boots: 0x3e2723,
-    belt: 0x1a1a1a,
-    H_gun: 0x5a5a5a,
-    M_gun: 0x2a2a2a,
-    S_gun: 0x0a0a0a,
-    W: 0xffffff,
-    eye: 0x4caf50,
-    F: 0xfff176,
-  };
-}
-
-function makeAdaPalette(): Record<string, number> {
-  return {
-    K: 0x0d0d0d,
-    H_hair: 0x3a3a3a,
-    M_hair: 0x1a1a1a,
-    S_hair: 0x050505,
-    H_skin: 0xf4c9a0,
-    M_skin: 0xe0b080,
-    S_skin: 0xa07050,
-    H_shirt: 0xd32f2f,  // 红旗袍
-    M_shirt: 0xb71c1c,
-    S_shirt: 0x7f1010,
-    H_pants: 0x1a1a1a,  // 黑丝
-    M_pants: 0x0a0a0a,
-    S_pants: 0x000000,
-    boots: 0x0a0a0a,
-    belt: 0x1a1a1a,
-    H_gun: 0x8d6e63,    // 左轮金属
-    M_gun: 0x3e2723,
-    S_gun: 0x1a0e08,
-    W: 0xffffff,
-    eye: 0xb71c1c,
-    F: 0xfff176,
-  };
-}
-
-/* ============================================================
- *  渲染函数 —— 把 Huntdown 风格 art 数组 + 色板渲染成纹理
- *  关键: 把 art 中的颜色代号 (H/M/S/K) 映射到实际颜色
- * ============================================================ */
-
-function makeCharacterTexture(
-  scene: Phaser.Scene,
-  key: string,
-  art: string[],
-  palette: Record<string, number>,
-  // 角色类型决定各部位颜色映射
-  type: 'leon' | 'claire' | 'ada'
-): void {
-  const p = palette;
-
-  // 不同角色部位颜色映射
-  const colorMap: Record<string, number> = {};
-
-  if (type === 'leon') {
-    colorMap['K'] = p.K;
-    colorMap['H'] = p.H_skin;      // 头/皮肤高光
-    colorMap['M'] = p.M_skin;      // 头/皮肤主
-    colorMap['S'] = p.S_skin;      // 头/皮肤阴影
-    colorMap['W'] = p.W;
-    colorMap['F'] = p.F;
-  } else if (type === 'claire') {
-    colorMap['K'] = p.K;
-    colorMap['H'] = p.H_skin;
-    colorMap['M'] = p.M_skin;
-    colorMap['S'] = p.S_skin;
-    colorMap['W'] = p.W;
-    colorMap['F'] = p.F;
-  } else {
-    colorMap['K'] = p.K;
-    colorMap['H'] = p.H_skin;
-    colorMap['M'] = p.M_skin;
-    colorMap['S'] = p.S_skin;
-    colorMap['W'] = p.W;
-    colorMap['F'] = p.F;
-  }
-
-  // 额外部位色 — 渲染时需要按位置区分头发/衣服/枪/裤
-  // 因为 art 中同一字符在不同行代表不同部位, 我们用逐行替换的方式
-  // 更简单: 直接生成完整的字符→颜色映射, 按行号区分
-  const rows = art.length;
-
-  const g = scene.add.graphics();
-
-  for (let y = 0; y < rows; y++) {
-    const row = art[y];
-    for (let x = 0; x < row.length; x++) {
-      const ch = row[x];
-      if (ch === '.' || ch === ' ') continue;
-
-      // 根据行号和列号判断部位
-      // 头: 行 0-12
-      // 躯干+手臂+枪: 行 13-22
-      // 腰带+裤+靴: 行 23-31
-      let color = colorMap[ch];
-
-      if (color === undefined) {
-        // 特殊颜色代号
-        if (ch === 'K') color = p.K;
-        else if (ch === 'W') color = p.W;
-        else if (ch === 'F') color = p.F;
-        else {
-          // 根据行号和字符推断部位颜色
-          if (y <= 12) {
-            // 头部区域
-            if (ch === 'H') color = p.H_skin;
-            else if (ch === 'M') color = p.M_skin;
-            else if (ch === 'S') color = p.S_skin;
-            // 头发 (行 0-4)
-            if (y <= 4) {
-              if (ch === 'H') color = p.H_hair;
-              else if (ch === 'M') color = p.M_hair;
-              else if (ch === 'S') color = p.S_hair;
-            }
-            // 马尾/发髻 (右侧延伸)
-            if (x >= 20 && ch === 'K') color = p.M_hair;
-          } else if (y >= 13 && y <= 22) {
-            // 躯干 + 手臂 + 枪
-            if (ch === 'H') color = p.H_shirt;
-            else if (ch === 'M') color = p.M_shirt;
-            else if (ch === 'S') color = p.S_shirt;
-            // 枪区域 (右侧 x >= 16)
-            if (x >= 16) {
-              if (ch === 'H') color = p.H_gun;
-              else if (ch === 'M') color = p.M_gun;
-              else if (ch === 'S') color = p.S_gun;
-            }
-          } else if (y >= 23) {
-            // 腰带 + 裤 + 靴
-            if (y === 23 || y === 24) {
-              // 腰带
-              color = p.belt;
-            } else {
-              if (ch === 'H') color = p.H_pants;
-              else if (ch === 'M') color = p.M_pants;
-              else if (ch === 'S') color = p.S_pants;
-              // 靴子 (行 29+)
-              if (y >= 29) {
-                color = p.boots;
-              }
-            }
-          }
-        }
-      }
-
-      if (color === undefined) continue;
-      g.fillStyle(color, 1);
-      g.fillRect(x * PX, y * PX, PX, PX);
-    }
-  }
-
-  g.generateTexture(key, 24 * PX, 32 * PX);
-  g.destroy();
-}
-
-/* ============================================================
- *  导出接口 —— 保持原有函数名, 内部完全重写
+ *  导出接口
  * ============================================================ */
 
 export function makeLeonTexture(scene: Phaser.Scene): void {
-  const pal = makeLeonPalette();
-  makeCharacterTexture(scene, 'player-leon', LEON_STAND, pal, 'leon');
-  makeCharacterTexture(scene, 'player-leon-aim', LEON_AIM, pal, 'leon');
+  const g = scene.add.graphics();
+  renderArt(g, LEON_STAND, LEON_PALETTE);
+  g.generateTexture('player-leon', 40 * PX, 55 * PX);  // 只到 row 52 有像素
+  g.destroy();
+
+  const g2 = scene.add.graphics();
+  renderArt(g2, LEON_AIM, LEON_PALETTE);
+  g2.generateTexture('player-leon-aim', 40 * PX, 53 * PX);
+  g2.destroy();
 }
 
 export function makeClaireTexture(scene: Phaser.Scene): void {
-  const pal = makeClairePalette();
-  makeCharacterTexture(scene, 'player-claire', CLAIRE_STAND, pal, 'claire');
-  makeCharacterTexture(scene, 'player-claire-aim', CLAIRE_AIM, pal, 'claire');
+  const g = scene.add.graphics();
+  renderArt(g, CLAIRE_STAND, CLAIRE_PALETTE);
+  g.generateTexture('player-claire', 40 * PX, 52 * PX);
+  g.destroy();
+
+  const g2 = scene.add.graphics();
+  renderArt(g2, CLAIRE_AIM, CLAIRE_PALETTE);
+  g2.generateTexture('player-claire-aim', 40 * PX, 52 * PX);
+  g2.destroy();
 }
 
 export function makeAdaTexture(scene: Phaser.Scene): void {
-  const pal = makeAdaPalette();
-  makeCharacterTexture(scene, 'player-ada', ADA_STAND, pal, 'ada');
-  makeCharacterTexture(scene, 'player-ada-aim', ADA_AIM, pal, 'ada');
+  const g = scene.add.graphics();
+  renderArt(g, ADA_STAND, ADA_PALETTE);
+  g.generateTexture('player-ada', 40 * PX, 55 * PX);
+  g.destroy();
+
+  const g2 = scene.add.graphics();
+  renderArt(g2, ADA_AIM, ADA_PALETTE);
+  g2.generateTexture('player-ada-aim', 40 * PX, 52 * PX);
+  g2.destroy();
 }
 
 /* ============================================================
- *  僵尸 (Huntdown 风格: 前伸手臂 + 破衣 + 血渍)
+ *  僵尸 — Huntdown 风格: 前伸手臂 + 破衣 + 血渍
+ *  20×24 逻辑像素
  * ============================================================ */
-
 const ZOMBIE_BASE = [
-  '................',
-  '.....KKKKK......',
-  '....KHHHHHK.....',
-  '....KHHHHHK.....',
-  '....KGGGGGK.....',  // 头
-  '....KGRGGGRK....',  // 红眼
-  '....KGGGGGK.....',
-  '....KGGGGGK.....',
-  '....KKKKKKKK....',
-  '..KKKKKKKKKKKK..',
-  '.KHHHHHHHHHHHHK.',  // 前伸手臂
-  '.KHHRRRHHHHRHHK.',  // 破衣+血
-  'KHHHHHHHHHHHHHHK',  // 破上衣
-  'KHHHHHHHHHHHHHHK',
-  '.KSSSSSSSSSSSK..',
-  '..KKKKKKKKKKK...',
-  '....KGGGGGK.....',  // 破裤
-  '....KGRGGGK.....',
-  '....KGGGGGK.....',
-  '....KKKKKKK.....',
-  '....KSSSSSK.....',
-  '....KSSSSSK.....',
-  '....KKKKKKK.....',
-  '................',
+  '....................',
+  '.....KKKKKKK........',
+  '....KHHHHHHHK.......',
+  '....KHHHHHHHK.......',
+  '....KMMMMMMMK.......',  // 头
+  '....KMRRMMRRK.......',  // 红眼
+  '....KMMMMMMMK.......',
+  '....KMMMMMMMK.......',
+  '....KKKKKKKKKKK.....',
+  '..KKKKKKKKKKKKKKK...',
+  '.KHHHHHHHHHHHHHHHK..',  // 前伸手臂 (Huntdown 经典姿态)
+  '.KHHRRRHHHHRHHHHHHK.',  // 破衣+血
+  'KHHHHHHHHHHHHHHHHHHK',  // 破上衣
+  'KHHHHHHHHHHHHHHHHHHK',
+  '.KSSSSSSSSSSSSSSK...',
+  '..KKKKKKKKKKKKK.....',
+  '....KMMMMMMMK.......',  // 破裤
+  '....KMRRRRRMK.......',
+  '....KMMMMMMMK.......',
+  '....KKKKKKK.........',
+  '....KSSSSSK.........',
+  '....KSSSSSK.........',
+  '....KKKKKKK.........',
+  '....................',
 ];
 
 function makeZombieTexture(scene: Phaser.Scene, key: string, paletteOverride?: Record<string, number>): void {
-  const g = scene.add.graphics();
-  const pal = {
-    K: 0x0d0d0d,
-    H: 0x7a9a40,  // 皮肤亮
-    M: 0x6b8e23,  // 皮肤主
-    S: 0x4a6b16,  // 皮肤阴影
-    G: 0x6b8e23,
+  const pal: Record<string, number> = {
+    K: 0x0a0a0a,
+    H: 0x7a9a40,
+    M: 0x6b8e23,
+    S: 0x3a5a16,
     R: 0xcc0000,
     ...paletteOverride,
   };
-
-  drawArt(g, ZOMBIE_BASE, pal);
-  // 前伸手臂 (Huntdown 僵尸经典姿态)
-  g.fillStyle(pal.G, 1);
-  for (let i = 0; i < 12; i++) {
-    g.fillRect((16 + i) * PX, 10 * PX, PX, PX);
-  }
+  const g = scene.add.graphics();
+  renderArt(g, ZOMBIE_BASE, pal);
+  // 前伸手臂延伸
+  g.fillStyle(pal.M, 1);
+  for (let i = 0; i < 14; i++) g.fillRect((20 + i) * PX, 11 * PX, PX, PX);
   g.fillStyle(pal.S, 1);
-  for (let i = 0; i < 8; i++) {
-    g.fillRect((-1 - i) * PX, 10 * PX, PX, PX);
-  }
-
-  g.generateTexture(key, 20 * PX, 24 * PX);
+  for (let i = 0; i < 10; i++) g.fillRect((-1 - i) * PX, 11 * PX, PX, PX);
+  g.generateTexture(key, 34 * PX, 24 * PX);
   g.destroy();
 }
 
 export function makeZombies(scene: Phaser.Scene): void {
   makeZombieTexture(scene, 'zombie-normal');
-  makeZombieTexture(scene, 'zombie-fast', { G: 0x8fbc8f, H: 0xa0d8a0, M: 0x8fbc8f, K: 0x0d0d0d });
-  makeZombieTexture(scene, 'zombie-tank', { G: 0x3a5a20, H: 0x4a7a28, M: 0x3a5a20 });
+  makeZombieTexture(scene, 'zombie-fast', { M: 0x8fbc8f, H: 0xa0d8a0, K: 0x0a0a0a });
+  makeZombieTexture(scene, 'zombie-tank', { M: 0x3a5a20, H: 0x4a7a28 });
 }
 
 /* ============================================================
@@ -590,8 +642,7 @@ const LICKER = [
 
 export function makeLickerTexture(scene: Phaser.Scene): void {
   const g = scene.add.graphics();
-  const palette = { S: 0x2a1a10, G: 0x6b5a42, W: 0xe8dcc8, R: 0x9a0000 };
-  drawArt(g, LICKER, palette);
+  renderArt(g, LICKER, { S: 0x2a1a10, G: 0x6b5a42, W: 0xe8dcc8 });
   g.fillStyle(0xff0000, 1);
   g.fillRect(20 * PX, 6 * PX, 2 * PX, 2 * PX);
   g.generateTexture('licker', 32 * PX, 20 * PX);
@@ -607,9 +658,8 @@ export function makeLickerTexture(scene: Phaser.Scene): void {
 }
 
 /* ============================================================
- *  障碍物 — 车辆 / 集装箱 / 油桶
+ *  障碍物 / 装饰 / 背景 — 保持原有
  * ============================================================ */
-
 function makeBoxArt(
   scene: Phaser.Scene, key: string, w: number, h: number,
   pal: { base: number; dark: number; light: number }
@@ -645,10 +695,6 @@ export function makeObstacles(scene: Phaser.Scene): void {
   g.generateTexture('obstacle-cone', 6 * PX, 4 * PX);
   g.destroy();
 }
-
-/* ============================================================
- *  子弹 / 粒子 / 枪口闪光 / 地面 / 背景
- * ============================================================ */
 
 export function makeDecorations(scene: Phaser.Scene): void {
   const bg = scene.add.graphics();
@@ -727,10 +773,6 @@ export function makeDecorations(scene: Phaser.Scene): void {
   road.generateTexture('road-strip', 256, 120);
   road.destroy();
 }
-
-/* ============================================================
- *  拾取物
- * ============================================================ */
 
 export function makePickups(scene: Phaser.Scene): void {
   const ammo = scene.add.graphics();

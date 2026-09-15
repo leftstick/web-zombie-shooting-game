@@ -77,7 +77,7 @@ export class GameScene extends Phaser.Scene {
       consumeJump: () => this.inputManager.consumeJump(),
       consumeReload: () => this.inputManager.consumeReload(),
     };
-    this.player = new Player(this, 100, GAME_HEIGHT - GROUND_HEIGHT - 48,
+    this.player = new Player(this, 100, GAME_HEIGHT - GROUND_HEIGHT - 60,
       charConfig, this.bullets, this.playerInputState);
 
     // 相机

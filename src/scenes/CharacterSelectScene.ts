@@ -70,7 +70,7 @@ export class CharacterSelectScene extends Phaser.Scene {
 
     // 角色立绘 (侧面像素画)
     const avatar = this.add.image(0, -h / 2 + 130, `player-${char.id}`);
-    avatar.setScale(1.6);
+    avatar.setScale(1.0);
 
     // 名字
     const name = this.add
