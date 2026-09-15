@@ -68,9 +68,9 @@ export class CharacterSelectScene extends Phaser.Scene {
     const bg = this.add.rectangle(0, 0, w, h, 0x1a1a1f, 0.92);
     bg.setStrokeStyle(3, char.color, 0.9);
 
-    // 角色立绘 (用生成的玩家纹理放大)
-    const avatar = this.add.image(0, -h / 2 + 110, `player-${char.id}`);
-    avatar.setScale(2.2);
+    // 角色立绘 (侧面像素画)
+    const avatar = this.add.image(0, -h / 2 + 130, `player-${char.id}`);
+    avatar.setScale(1.6);
 
     // 名字
     const name = this.add
@@ -122,12 +122,9 @@ export class CharacterSelectScene extends Phaser.Scene {
       ...dmgBar,
       desc,
     ]);
-    container.setSize(w, h);
-    container.setInteractive(
-      new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h),
-      Phaser.Geom.Rectangle.Contains
-    );
-    container.on('pointerdown', () => {
+    // 用 bg 自带的 setInteractive(), 不用 Container 自定义 hitarea
+    bg.setInteractive();
+    bg.on('pointerdown', () => {
       this.selectedIndex = idx;
       this.refreshSelection();
     });
@@ -162,6 +159,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     const h = 56;
     const bg = this.add.rectangle(0, 0, w, h, COLORS.accent, 0.9);
     bg.setStrokeStyle(2, 0xffffff, 0.9);
+    bg.setInteractive();
     const txt = this.add
       .text(0, 0, label, {
         fontSize: '24px',
@@ -171,18 +169,36 @@ export class CharacterSelectScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const container = this.add.container(x, y, [bg, txt]);
-    container.setSize(w, h);
-    container.setInteractive(
-      new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h),
-      Phaser.Geom.Rectangle.Contains
-    );
-    container.on('pointerover', () => bg.setFillStyle(0xff5252, 1));
-    container.on('pointerout', () => bg.setFillStyle(COLORS.accent, 0.9));
-    container.on('pointerdown', () => {
-      bg.setScale(0.96);
+
+    let pressed = false;
+    bg.on('pointerover', () => { if (!pressed) bg.setFillStyle(0xff5252, 1); });
+    bg.on('pointerout', () => { if (!pressed) bg.setFillStyle(COLORS.accent, 0.9); });
+    bg.on('pointerdown', () => {
+      pressed = true;
+      // 只改颜色, 不缩放 —— 缩放会缩小 hit area
+      bg.setFillStyle(0xd50000, 1);
+      bg.setStrokeStyle(0);
+    });
+    bg.on('pointerup', () => {
+      if (!pressed) return;
+      pressed = false;
+      this.tweens.add({
+        targets: container,
+        scaleX: 1.06, scaleY: 1.06,
+        duration: 80, yoyo: true,
+        ease: 'Quad.easeOut',
+        onComplete: () => { container.setScale(1, 1); },
+      });
+      bg.setFillStyle(COLORS.accent, 0.9);
+      bg.setStrokeStyle(2, 0xffffff, 0.9);
       onClick();
     });
-    container.on('pointerup', () => bg.setScale(1));
+    bg.on('pointerupoutside', () => {
+      pressed = false;
+      container.setScale(1, 1);
+      bg.setFillStyle(COLORS.accent, 0.9);
+      bg.setStrokeStyle(2, 0xffffff, 0.9);
+    });
     return container;
   }
 

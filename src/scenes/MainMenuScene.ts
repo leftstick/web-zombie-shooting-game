@@ -85,6 +85,10 @@ export class MainMenuScene extends Phaser.Scene {
     const h = 64;
     const bg = this.add.rectangle(0, 0, w, h, COLORS.accent, 0.85);
     bg.setStrokeStyle(2, 0xffffff, 0.9);
+    // 关键: 用 bg 自带的 setInteractive(), 不用 Container 自定义 hit area
+    // Container.setInteractive + 自定义 hitarea 在移动端坐标转换有 bug
+    bg.setInteractive();
+
     const txt = this.add
       .text(0, 0, label, {
         fontSize: '26px',
@@ -95,37 +99,30 @@ export class MainMenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const container = this.add.container(x, y, [bg, txt]);
-    container.setSize(w, h);
-    container.setInteractive(
-      new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h),
-      Phaser.Geom.Rectangle.Contains
-    );
 
     let pressed = false;
 
-    container.on('pointerover', () => {
+    bg.on('pointerover', () => {
       if (!pressed) bg.setFillStyle(0xffff5252, 1);
     });
-    container.on('pointerout', () => {
+    bg.on('pointerout', () => {
       if (!pressed) bg.setFillStyle(COLORS.accent, 0.85);
     });
-    container.on('pointerdown', () => {
+    bg.on('pointerdown', () => {
       pressed = true;
-      // 视觉反馈: 压扁 + 变色 + 去掉描边
-      container.setScale(0.94, 0.94);
+      // 只改颜色, 不缩放 container —— 缩放会缩小 hit area 导致 pointerup 丢失
       bg.setFillStyle(0xd50000, 1);
       bg.setStrokeStyle(0);
     });
-    // pointerup 在按钮上 → 触发点击 + 回弹动画
-    container.on('pointerup', () => {
+    bg.on('pointerup', () => {
       if (!pressed) return;
       pressed = false;
-      // 回弹: 先 scale 1.08 再 1.0
+      // 回弹动画 (此时 hit area 不再重要)
       this.tweens.add({
         targets: container,
-        scaleX: 1.08,
-        scaleY: 1.08,
-        duration: 60,
+        scaleX: 1.06,
+        scaleY: 1.06,
+        duration: 80,
         yoyo: true,
         ease: 'Quad.easeOut',
         onComplete: () => {
@@ -136,8 +133,7 @@ export class MainMenuScene extends Phaser.Scene {
       bg.setStrokeStyle(2, 0xffffff, 0.9);
       onClick();
     });
-    // pointerup 在按钮外 → 只恢复状态, 不触发
-    container.on('pointerupoutside', () => {
+    bg.on('pointerupoutside', () => {
       pressed = false;
       container.setScale(1, 1);
       bg.setFillStyle(COLORS.accent, 0.85);

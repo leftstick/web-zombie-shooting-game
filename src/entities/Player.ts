@@ -53,8 +53,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(40);
-    this.body!.setSize(this.width * 0.55, this.height * 0.85);
-    this.body!.setOffset(this.width * 0.22, this.height * 0.12);
+    // 侧视角角色: 碰撞体窄而高
+    this.body!.setSize(this.width * 0.35, this.height * 0.8);
+    this.body!.setOffset(this.width * 0.25, this.height * 0.15);
     this.setCollideWorldBounds(true);
     this.setBounce(0);
 
@@ -133,8 +134,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // ---- 更新枪口闪光位置 ----
     if (this.muzzleFlash) {
-      const offsetX = this.facing === 1 ? 28 : -28;
-      this.muzzleFlash.setPosition(this.x + offsetX, this.y - 6);
+      const offsetX = this.facing === 1 ? this.width * 0.55 : -this.width * 0.55;
+      this.muzzleFlash.setPosition(this.x + offsetX, this.y - 3);
       this.muzzleFlash.setFlipX(this.facing === -1);
     }
   }
@@ -166,8 +167,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       const vy = Math.sin(angle) * w.bulletSpeed;
 
       const bullet = this.bullets.get(
-        this.x + this.facing * 30,
-        this.y - 6
+        this.x + this.facing * this.width * 0.55,
+        this.y - 3
       ) as Bullet;
       if (bullet) {
         bullet.setActive(true);

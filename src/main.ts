@@ -115,20 +115,17 @@ function applyManualLetterbox() {
   //   bounds.y = clientRect.top + pageYOffset - document.documentElement.clientTop
   //   在 Android Chrome 上 documentElement.clientTop 可能是非零 (状态栏/地址栏高度),
   //   导致 bounds.top 被算小 → transformY(pageY) = (pageY - 偏小top) * scale → Y 偏移!
-  // 实测: 用户点按钮中心, Phaser 以为在按钮下方 → 要点按钮上方才命中.
-  //
-  // 正确做法: 用我们自己算出的纯 CSS values, 不要加 pageOffset, 不要减 clientTop.
-  // Pointer event 的 pageX = clientX + pageXOffset, 所以转换公式是:
-  //   pageX - pageXOffset = clientX (相对视口)
-  //   clientX - canvas CSS left = 相对 canvas 左上角
-  //   再乘以 scale 得到游戏坐标
-  const pageXOff = window.pageXOffset || 0;
-  const pageYOff = window.pageYOffset || 0;
+  // 另外 pageXOffset/pageYOffset 必须每次实时读取, 不能缓存 ——
+  // 移动端地址栏伸缩会导致 pageOffset 变化, 缓存的旧值会让坐标偏移.
   game.scale.transformX = function (pageX: number) {
-    return (pageX - pageXOff - parseFloat(canvas.style.left)) * (GAME_WIDTH / cssW);
+    const px = window.pageXOffset || 0;
+    const left = parseFloat(canvas.style.left) || 0;
+    return (pageX - px - left) * (GAME_WIDTH / cssW);
   };
   game.scale.transformY = function (pageY: number) {
-    return (pageY - pageYOff - parseFloat(canvas.style.top)) * (GAME_HEIGHT / cssH);
+    const py = window.pageYOffset || 0;
+    const top = parseFloat(canvas.style.top) || 0;
+    return (pageY - py - top) * (GAME_HEIGHT / cssH);
   };
 }
 

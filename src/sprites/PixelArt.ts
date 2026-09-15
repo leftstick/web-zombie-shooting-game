@@ -38,182 +38,313 @@ function drawPixelArt(
 }
 
 /* ============================================================
- *  角色像素图 (16x24 逻辑像素, PX=3 后 48x72)
- *  风格: 暴徒猎手 — 方正块体 + 头部大 + 四肢粗短 + 持枪臂水平前伸
- *  生化危机特征: 衣服配色/发式/标志性装备
+ *  角色像素图 (24x32 逻辑像素, PX=3 后 72x96)
+ *  侧面视角 (横版射击游戏标准) + 多层着色
+ *  风格: 暴徒猎手 — 侧脸轮廓 + 持枪前伸 + 方正块体
  * ============================================================ */
 
-/** 通用暴徒猎手风格人体 (16x24 逻辑像素) */
-const BASE_HUMAN = [
-  '................', // 0
-  '......HHHH......', // 1 发顶高光
-  '.....HHHHHH.....', // 2
-  '....SSSSSSSS....', // 3
-  '....SSSSSSSS....', // 4 头发阴影
-  '....FFFFFFFF....', // 5 脸
-  '....FFFFFFFF....', // 6
-  '....FFFFFFFF....', // 7
-  '....SSSSSSSS....', // 8 下巴阴影
-  '....BBBBBBBB....', // 9 脖子/衣领
-  '...TTTTTTTTTT...', // 10 上身顶
-  '...TTTTTTTTTT...', // 11
-  '..TTTTTTTTTTTT..', // 12
-  '..TTTTTTTTTTTT..', // 13
-  '..TTTTTTTTTTTT..', // 14
-  '..TTTTTTTTTTTT..', // 15
-  '...TTTTTTTTTT...', // 16
-  '....TT....TT....', // 17 腰带/髋
-  '....PP....PP....', // 18 腿
-  '....PP....PP....', // 19
-  '....PP....PP....', // 20
-  '....KK....KK....', // 21 靴
-  '....KK....KK....', // 22
-  '................', // 23
-];
+/**
+ * 绘制侧面视角角色
+ * canvas: 24x32 逻辑像素, 原点左上角
+ * 角色面向右侧
+ */
+function drawSideCharacter(
+  gfx: Phaser.GameObjects.Graphics,
+  pal: {
+    hairHi: number;    hair: number;    hairSh: number;
+    skinHi: number;    skin: number;    skinSh: number;
+    shirtHi: number;   shirt: number;   shirtSh: number;
+    pantsHi: number;   pants: number;   pantsSh: number;
+    boots: number;     bootsSh: number;
+    belt: number;
+    gun: number;       gunMetal: number;
+    eye: number;       acc?: number;     // 配饰色 (徽章/领带等)
+  },
+  opts: {
+    hairStyle: 'short' | 'ponytail' | 'bun';
+    shirtType: 'vest' | 'jacket' | 'dress';
+    gunVariant: 'pistol' | 'smg' | 'revolver';
+    aimGun: boolean;
+  }
+): void {
+  const p = PX;
+
+  // === 头部 (行 0-12) ===
+  // 后脑勺 + 头发
+  gfx.fillStyle(pal.hair, 1);
+  gfx.fillRect(5 * p, 1 * p, 8 * p, 3 * p);     // 头顶
+  gfx.fillRect(4 * p, 2 * p, 1 * p, 4 * p);    // 后脑
+  // 头发高光
+  gfx.fillStyle(pal.hairHi, 1);
+  gfx.fillRect(6 * p, 1 * p, 4 * p, 1 * p);
+  gfx.fillRect(5 * p, 2 * p, 1 * p, 1 * p);
+  // 头发阴影
+  gfx.fillStyle(pal.hairSh, 1);
+  gfx.fillRect(4 * p, 5 * p, 1 * p, 2 * p);
+
+  // 马尾辫 (克莱尔)
+  if (opts.hairStyle === 'ponytail') {
+    gfx.fillStyle(pal.hair, 1);
+    gfx.fillRect(2 * p, 3 * p, 3 * p, 5 * p);
+    gfx.fillStyle(pal.hairHi, 1);
+    gfx.fillRect(2 * p, 3 * p, 1 * p, 3 * p);
+    gfx.fillStyle(pal.hairSh, 1);
+    gfx.fillRect(2 * p, 7 * p, 3 * p, 1 * p);
+  }
+  // 发髻 (艾达)
+  if (opts.hairStyle === 'bun') {
+    gfx.fillStyle(pal.hair, 1);
+    gfx.fillRect(3 * p, 0 * p, 3 * p, 2 * p);
+    gfx.fillStyle(pal.hairHi, 1);
+    gfx.fillRect(3 * p, 0 * p, 2 * p, 1 * p);
+  }
+
+  // 脸部 (侧面)
+  gfx.fillStyle(pal.skin, 1);
+  gfx.fillRect(6 * p, 4 * p, 6 * p, 7 * p);     // 脸主体
+  gfx.fillStyle(pal.skinHi, 1);
+  gfx.fillRect(6 * p, 4 * p, 1 * p, 3 * p);     // 额头高光
+  gfx.fillRect(8 * p, 4 * p, 1 * p, 1 * p);
+  gfx.fillStyle(pal.skinSh, 1);
+  gfx.fillRect(11 * p, 4 * p, 1 * p, 7 * p);    // 下颌阴影
+  gfx.fillRect(9 * p, 10 * p, 3 * p, 1 * p);
+
+  // 眼睛
+  gfx.fillStyle(0xffffff, 1);
+  gfx.fillRect(9 * p, 6 * p, 2 * p, 1 * p);
+  gfx.fillStyle(pal.eye, 1);
+  gfx.fillRect(10 * p, 6 * p, 1 * p, 1 * p);
+
+  // 鼻子
+  gfx.fillStyle(pal.skinSh, 1);
+  gfx.fillRect(12 * p, 7 * p, 1 * p, 2 * p);
+
+  // 嘴
+  gfx.fillStyle(0x8a3030, 1);
+  gfx.fillRect(11 * p, 9 * p, 2 * p, 1 * p);
+
+  // 脖子
+  gfx.fillStyle(pal.skinSh, 1);
+  gfx.fillRect(7 * p, 11 * p, 3 * p, 2 * p);
+
+  // === 躯干 (行 13-21) ===
+  gfx.fillStyle(pal.shirt, 1);
+  gfx.fillRect(5 * p, 13 * p, 8 * p, 9 * p);     // 主体
+  gfx.fillStyle(pal.shirtHi, 1);
+  gfx.fillRect(5 * p, 13 * p, 8 * p, 1 * p);    // 肩部高光
+  gfx.fillRect(5 * p, 13 * p, 1 * p, 9 * p);    // 背部高光
+  gfx.fillStyle(pal.shirtSh, 1);
+  gfx.fillRect(11 * p, 14 * p, 2 * p, 8 * p);   // 腹部阴影
+  gfx.fillRect(5 * p, 21 * p, 8 * p, 1 * p);    // 底边阴影
+
+  // 服装细节
+  if (opts.shirtType === 'vest') {
+    // RPD 背心: 前拉链 + 徽章
+    gfx.fillStyle(pal.shirtSh, 1);
+    gfx.fillRect(10 * p, 14 * p, 1 * p, 7 * p); // 拉链
+    if (pal.acc !== undefined) {
+      gfx.fillStyle(pal.acc, 1);
+      gfx.fillRect(11 * p, 16 * p, 2 * p, 2 * p); // RPD 徽章
+    }
+  } else if (opts.shirtType === 'jacket') {
+    // 夹克: 翻领 + 拉链
+    gfx.fillStyle(pal.shirtSh, 1);
+    gfx.fillRect(10 * p, 13 * p, 3 * p, 1 * p); // 翻领
+    gfx.fillRect(11 * p, 14 * p, 1 * p, 7 * p); // 拉链
+    gfx.fillStyle(pal.shirtHi, 1);
+    gfx.fillRect(9 * p, 14 * p, 1 * p, 6 * p);  // 领翻折
+  } else if (opts.shirtType === 'dress') {
+    // 旗袍: 立领 + 盘扣 + 开衩
+    gfx.fillStyle(pal.shirtSh, 1);
+    gfx.fillRect(10 * p, 13 * p, 1 * p, 3 * p);  // 立领
+    gfx.fillRect(11 * p, 17 * p, 1 * p, 1 * p);  // 盘扣
+    gfx.fillRect(11 * p, 19 * p, 1 * p, 1 * p);
+    gfx.fillStyle(pal.skin, 1);
+    gfx.fillRect(11 * p, 21 * p, 2 * p, 1 * p);  // 开衩露腿
+  }
+
+  // 腰带
+  gfx.fillStyle(pal.belt, 1);
+  gfx.fillRect(5 * p, 21 * p, 8 * p, 1 * p);
+
+  // === 手臂 + 枪 ===
+  if (opts.aimGun) {
+    // 前伸手臂 (面向右伸出)
+    const armLen = opts.gunVariant === 'smg' ? 6 : 5;
+    gfx.fillStyle(pal.skin, 1);
+    gfx.fillRect(13 * p, 15 * p, armLen * p, 2 * p);  // 手臂
+    gfx.fillStyle(pal.skinHi, 1);
+    gfx.fillRect(13 * p, 15 * p, armLen * p, 1 * p);  // 手臂高光
+    // 手
+    gfx.fillStyle(pal.skinSh, 1);
+    gfx.fillRect((13 + armLen) * p, 15 * p, 1 * p, 2 * p);
+    // 枪
+    const gunStart = (14 + armLen) * p;
+    const gunLen = opts.gunVariant === 'smg' ? 5 : 4;
+    gfx.fillStyle(pal.gun, 1);
+    gfx.fillRect(gunStart, 15 * p, gunLen * p, 2 * p);
+    gfx.fillStyle(pal.gunMetal, 1);
+    gfx.fillRect(gunStart, 15 * p, gunLen * p, 1 * p);  // 枪管金属高光
+    // 枪口
+    gfx.fillStyle(0xffd700, 1);
+    gfx.fillRect((gunStart + gunLen) * p, 15 * p, 1 * p, 2 * p);
+  } else {
+    // 站姿: 手臂自然弯曲在身侧
+    gfx.fillStyle(pal.shirt, 1);
+    gfx.fillRect(12 * p, 14 * p, 2 * p, 5 * p);   // 上臂
+    gfx.fillStyle(pal.shirtSh, 1);
+    gfx.fillRect(13 * p, 14 * p, 1 * p, 5 * p);
+    // 前臂 + 手
+    gfx.fillStyle(pal.skin, 1);
+    gfx.fillRect(13 * p, 18 * p, 1 * p, 3 * p);
+    gfx.fillStyle(pal.skinSh, 1);
+    gfx.fillRect(13 * p, 20 * p, 1 * p, 1 * p);
+    // 腰间枪套
+    gfx.fillStyle(pal.gun, 1);
+    gfx.fillRect(11 * p, 18 * p, 2 * p, 3 * p);
+  }
+
+  // === 腿 (行 22-27) ===
+  // 前腿 (右, 靠近镜头)
+  gfx.fillStyle(pal.pants, 1);
+  gfx.fillRect(8 * p, 22 * p, 3 * p, 6 * p);
+  gfx.fillStyle(pal.pantsHi, 1);
+  gfx.fillRect(8 * p, 22 * p, 1 * p, 6 * p);
+  gfx.fillStyle(pal.pantsSh, 1);
+  gfx.fillRect(10 * p, 22 * p, 1 * p, 6 * p);
+
+  // 后腿 (左, 远离镜头)
+  gfx.fillStyle(pal.pantsSh, 1);
+  gfx.fillRect(5 * p, 22 * p, 3 * p, 6 * p);
+
+  // === 靴子 (行 28-31) ===
+  // 前靴
+  gfx.fillStyle(pal.boots, 1);
+  gfx.fillRect(7 * p, 28 * p, 5 * p, 3 * p);    // 前靴
+  gfx.fillStyle(pal.bootsSh, 1);
+  gfx.fillRect(10 * p, 28 * p, 2 * p, 3 * p);
+  gfx.fillRect(7 * p, 30 * p, 5 * p, 1 * p);   // 鞋底
+  // 后靴
+  gfx.fillStyle(pal.bootsSh, 1);
+  gfx.fillRect(4 * p, 28 * p, 4 * p, 3 * p);
+  gfx.fillRect(4 * p, 30 * p, 4 * p, 1 * p);
+}
 
 function makePlayerTexture(
   scene: Phaser.Scene,
   key: string,
   opts: {
     skin?: number;
+    skinHi?: number;
+    skinSh?: number;
     hair?: number;
-    hairHighlight?: number;
+    hairHi?: number;
+    hairSh?: number;
     pants?: number;
+    pantsHi?: number;
+    pantsSh?: number;
     shirt?: number;
-    shirtDark?: number;
+    shirtHi?: number;
+    shirtSh?: number;
     boots?: number;
+    bootsSh?: number;
+    belt?: number;
     gun?: number;
-    gunBarrel?: number;
-    aimGun?: boolean; // 是否持枪前伸 (站立 vs 瞄准)
-    gunVariant?: 'pistol' | 'smg' | 'revolver' | 'shotgun';
-    extraArt?: string[]; // 额外特征 (墨镜/领带等) 16x24
-    extraColor?: number;
+    gunMetal?: number;
+    eye?: number;
+    acc?: number;
+    hairStyle: 'short' | 'ponytail' | 'bun';
+    shirtType: 'vest' | 'jacket' | 'dress';
+    gunVariant: 'pistol' | 'smg' | 'revolver';
+    aimGun: boolean;
   }
 ): void {
   const g = scene.add.graphics();
-
-  // 主图 (站立)
-  drawPixelArt(g, BASE_HUMAN, {
-    H: opts.hairHighlight ?? 0xffffff,
-    S: opts.hair ?? 0x2b1a0a,
-    F: opts.skin ?? 0xf4c9a0,
-    B: opts.shirtDark ?? 0x333333,
-    T: opts.shirt ?? 0x2e7d32,
-    P: opts.pants ?? 0x455a64,
-    K: opts.boots ?? 0x212121,
+  drawSideCharacter(g, {
+    hairHi: opts.hairHi ?? 0xffffff,
+    hair: opts.hair ?? 0x2b1a0a,
+    hairSh: opts.hairSh ?? 0x1a0e04,
+    skinHi: opts.skinHi ?? 0xf4c9a0,
+    skin: opts.skin ?? 0xe0b080,
+    skinSh: opts.skinSh ?? 0xb08050,
+    shirtHi: opts.shirtHi ?? 0xffffff,
+    shirt: opts.shirt ?? 0x2e7d32,
+    shirtSh: opts.shirtSh ?? 0x1a3a1a,
+    pantsHi: opts.pantsHi ?? 0x607080,
+    pants: opts.pants ?? 0x455a64,
+    pantsSh: opts.pantsSh ?? 0x2a3a44,
+    boots: opts.boots ?? 0x212121,
+    bootsSh: opts.bootsSh ?? 0x111111,
+    belt: opts.belt ?? 0x3e2723,
+    gun: opts.gun ?? 0x1a1a1a,
+    gunMetal: opts.gunMetal ?? 0x424242,
+    eye: opts.eye ?? 0x1a237e,
+    acc: opts.acc,
+  }, {
+    hairStyle: opts.hairStyle,
+    shirtType: opts.shirtType,
+    gunVariant: opts.gunVariant,
+    aimGun: opts.aimGun,
   });
-
-  // 持枪臂 —— 暴徒猎手经典: 手臂水平前伸, 枪紧贴身体
-  if (opts.aimGun) {
-    // 伸出左臂 + 枪 (朝右)
-    const len = opts.gunVariant === 'shotgun' ? 10 : opts.gunVariant === 'smg' ? 9 : opts.gunVariant === 'revolver' ? 6 : 7;
-    for (let i = 0; i < len; i++) {
-      // 手臂 (皮肤)
-      g.fillStyle(opts.skin ?? 0xf4c9a0, 1);
-      g.fillRect((16 + i) * PX, 12 * PX, PX, PX);
-      // 枪体 (深色金属)
-      g.fillStyle(opts.gun ?? 0x1a1a1a, 1);
-      g.fillRect((16 + i) * PX, 10 * PX, PX, 2 * PX);
-    }
-    // 枪口
-    g.fillStyle(opts.gunBarrel ?? 0xffeb3b, 1);
-    g.fillRect((16 + len) * PX, 10 * PX, PX, 2 * PX);
-  } else {
-    // 站姿: 双臂两侧自然下垂, 枪挂在身侧
-    g.fillStyle(opts.skin ?? 0xf4c9a0, 1);
-    g.fillRect(0, 12 * PX, PX, 5 * PX);
-    g.fillRect(15 * PX, 12 * PX, PX, 5 * PX);
-    // 手枪 (挂腰)
-    g.fillStyle(opts.gun ?? 0x1a1a1a, 1);
-    g.fillRect(14 * PX, 16 * PX, 2 * PX, 3 * PX);
-  }
-
-  g.generateTexture(key, 18 * PX, 24 * PX);
+  g.generateTexture(key, 24 * PX, 32 * PX);
   g.destroy();
 }
 
-/* --- 里昂: 棕发 蓝警服 皮带 手枪 --- */
+/* --- 里昂: 棕发 RPD蓝背心 战术裤 手枪 --- */
 export function makeLeonTexture(scene: Phaser.Scene): void {
-  makePlayerTexture(scene, 'player-leon', {
-    hair: 0x4a2c1a, // 深棕
-    hairHighlight: 0x6b4423,
-    skin: 0xf4c9a0,
-    shirt: 0x1a3a5c,   // 深蓝警服
-    shirtDark: 0x0f2033,
-    pants: 0x0d1f33,
-    boots: 0x2a2a2a,
-    gun: 0x1a1a1a,
-    aimGun: false,
-    gunVariant: 'pistol',
-  });
-  makePlayerTexture(scene, 'player-leon-aim', {
-    hair: 0x4a2c1a,
-    hairHighlight: 0x6b4423,
-    skin: 0xf4c9a0,
-    shirt: 0x1a3a5c,
-    shirtDark: 0x0f2033,
-    pants: 0x0d1f33,
-    boots: 0x2a2a2a,
-    gun: 0x1a1a1a,
-    aimGun: true,
-    gunVariant: 'pistol',
-  });
+  const base = {
+    hairHi: 0x8b5a2b,  hair: 0x5a3a1a,  hairSh: 0x3a2010,
+    skinHi: 0xf4c9a0,  skin: 0xe0b080,  skinSh: 0xa07050,
+    shirtHi: 0x2a4a7a, shirt: 0x1a3a5c,  shirtSh: 0x0d2033,
+    pantsHi: 0x2a3040, pants: 0x1a1f30,  pantsSh: 0x0d1018,
+    boots: 0x2a2a2a,   bootsSh: 0x111111,
+    belt: 0x3a2510,
+    gun: 0x1a1a1a,     gunMetal: 0x424242,
+    eye: 0x1565c0,     acc: 0xffd700,
+    hairStyle: 'short' as const,
+    shirtType: 'vest' as const,
+    gunVariant: 'pistol' as const,
+  };
+  makePlayerTexture(scene, 'player-leon', { ...base, aimGun: false });
+  makePlayerTexture(scene, 'player-leon-aim', { ...base, aimGun: true });
 }
 
-/* --- 克莱尔: 红发 红夹克 摩托皮衣 MQ9冲锋枪 --- */
+/* --- 克莱尔: 红马尾 红夹克 黑裤 冲锋枪 --- */
 export function makeClaireTexture(scene: Phaser.Scene): void {
-  makePlayerTexture(scene, 'player-claire', {
-    hair: 0xc62828,
-    hairHighlight: 0xef5350,
-    skin: 0xf4c9a0,
-    shirt: 0xc62828,   // 红夹克
-    shirtDark: 0x8e1414,
-    pants: 0x212121,
-    boots: 0x3e2723,
-    gun: 0x1a1a1a,
-    aimGun: false,
-    gunVariant: 'smg',
-  });
-  makePlayerTexture(scene, 'player-claire-aim', {
-    hair: 0xc62828,
-    hairHighlight: 0xef5350,
-    skin: 0xf4c9a0,
-    shirt: 0xc62828,
-    shirtDark: 0x8e1414,
-    pants: 0x212121,
-    boots: 0x3e2723,
-    gun: 0x1a1a1a,
-    aimGun: true,
-    gunVariant: 'smg',
-  });
+  const base = {
+    hairHi: 0xef5350,  hair: 0xc62828,  hairSh: 0x8e1414,
+    skinHi: 0xf4c9a0,  skin: 0xe0b080,  skinSh: 0xa07050,
+    shirtHi: 0xef5350, shirt: 0xc62828,  shirtSh: 0x8e1414,
+    pantsHi: 0x3a3a3a, pants: 0x212121,  pantsSh: 0x111111,
+    boots: 0x3e2723,   bootsSh: 0x1a0e08,
+    belt: 0x1a1a1a,
+    gun: 0x1a1a1a,     gunMetal: 0x424242,
+    eye: 0x4caf50,     acc: 0xffeb3b,
+    hairStyle: 'ponytail' as const,
+    shirtType: 'jacket' as const,
+    gunVariant: 'smg' as const,
+  };
+  makePlayerTexture(scene, 'player-claire', { ...base, aimGun: false });
+  makePlayerTexture(scene, 'player-claire-aim', { ...base, aimGun: true });
 }
 
-/* --- 艾达王: 黑发 红旗袍 黑裤 AMR左轮 --- */
+/* --- 艾达王: 黑发髻 红旗袍 黑丝 左轮 --- */
 export function makeAdaTexture(scene: Phaser.Scene): void {
-  makePlayerTexture(scene, 'player-ada', {
-    hair: 0x0a0a0a,
-    hairHighlight: 0x3a3a3a,
-    skin: 0xf4c9a0,
-    shirt: 0xb71c1c,   // 红旗袍
-    shirtDark: 0x7f1010,
-    pants: 0x0a0a0a,
-    boots: 0x1a1a1a,
-    gun: 0x3e2723,     // 左轮铜色
-    aimGun: false,
-    gunVariant: 'revolver',
-  });
-  makePlayerTexture(scene, 'player-ada-aim', {
-    hair: 0x0a0a0a,
-    hairHighlight: 0x3a3a3a,
-    skin: 0xf4c9a0,
-    shirt: 0xb71c1c,
-    shirtDark: 0x7f1010,
-    pants: 0x0a0a0a,
-    boots: 0x1a1a1a,
-    gun: 0x3e2723,
-    aimGun: true,
-    gunVariant: 'revolver',
-  });
+  const base = {
+    hairHi: 0x4a4a4a,  hair: 0x1a1a1a,  hairSh: 0x0a0a0a,
+    skinHi: 0xf4c9a0,  skin: 0xe0b080,  skinSh: 0xa07050,
+    shirtHi: 0xd32f2f, shirt: 0xb71c1c,  shirtSh: 0x7f1010,
+    pantsHi: 0x2a2a2a, pants: 0x0a0a0a,  pantsSh: 0x000000,
+    boots: 0x1a1a1a,   bootsSh: 0x000000,
+    belt: 0x1a1a1a,
+    gun: 0x3e2723,     gunMetal: 0x8d6e63,
+    eye: 0xb71c1c,     acc: 0xffd700,
+    hairStyle: 'bun' as const,
+    shirtType: 'dress' as const,
+    gunVariant: 'revolver' as const,
+  };
+  makePlayerTexture(scene, 'player-ada', { ...base, aimGun: false });
+  makePlayerTexture(scene, 'player-ada-aim', { ...base, aimGun: true });
 }
 
 /* ============================================================
