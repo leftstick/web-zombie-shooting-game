@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import { COLORS, GAME_WIDTH, GAME_HEIGHT } from '../config/gameConfig';
 
 /**
- * PreloadScene - 加载资源 (当前无外部资源, 作为占位 + 进度条展示)
+ * PreloadScene — 加载所有外部 PNG 资源
+ * BootScene 只生成程序化纹理, 外部资源在这里加载
  */
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -12,7 +13,7 @@ export class PreloadScene extends Phaser.Scene {
   preload(): void {
     // 加载外部 PNG 资源 (AI 生成的像素艺术)
     this.load.image('player-leon', '/assets/leon.png');
-    this.load.image('player-leon-aim', '/assets/leon.png');  // 复用同一张, 翻转+缩放代替
+    this.load.image('player-leon-aim', '/assets/leon.png');
     this.load.image('player-claire', '/assets/claire.png');
     this.load.image('player-claire-aim', '/assets/claire.png');
     this.load.image('player-ada', '/assets/ada.png');
@@ -43,20 +44,18 @@ export class PreloadScene extends Phaser.Scene {
       bar.width = (barW - 4) * p;
     });
 
-    this.load.on('complete', () => {
-      tip.setText('COMPLETE');
-      this.time.delayedCall(300, () => {
-        this.scene.start('MainMenuScene');
-      });
+    this.load.on('loaderror', (file: Phaser.Loader.File) => {
+      console.error('[PreloadScene] FAILED to load:', file.key, file.src);
+      tip.setText('LOAD FAILED: ' + file.key);
+      tip.setColor('#ff4444');
     });
   }
 
   create(): void {
-    // 没有外部资源时 Phaser 不会触发 progress/complete; 兜底直接跳转
-    if (this.load.totalToLoad === 0) {
-      this.time.delayedCall(400, () => {
-        this.scene.start('MainMenuScene');
-      });
-    }
+    // Phaser 会在所有 load.image 完成后自动触发 create()
+    // 不用检查 totalToLoad, 直接跳转
+    this.time.delayedCall(300, () => {
+      this.scene.start('MainMenuScene');
+    });
   }
 }
