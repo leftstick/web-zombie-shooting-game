@@ -101,13 +101,48 @@ export class MainMenuScene extends Phaser.Scene {
       Phaser.Geom.Rectangle.Contains
     );
 
-    container.on('pointerover', () => bg.setFillStyle(0xffff5252, 1));
-    container.on('pointerout', () => bg.setFillStyle(COLORS.accent, 0.85));
+    let pressed = false;
+
+    container.on('pointerover', () => {
+      if (!pressed) bg.setFillStyle(0xffff5252, 1);
+    });
+    container.on('pointerout', () => {
+      if (!pressed) bg.setFillStyle(COLORS.accent, 0.85);
+    });
     container.on('pointerdown', () => {
-      bg.setScale(0.96);
+      pressed = true;
+      // 视觉反馈: 压扁 + 变色 + 去掉描边
+      container.setScale(0.94, 0.94);
+      bg.setFillStyle(0xd50000, 1);
+      bg.setStrokeStyle(0);
+    });
+    // pointerup 在按钮上 → 触发点击 + 回弹动画
+    container.on('pointerup', () => {
+      if (!pressed) return;
+      pressed = false;
+      // 回弹: 先 scale 1.08 再 1.0
+      this.tweens.add({
+        targets: container,
+        scaleX: 1.08,
+        scaleY: 1.08,
+        duration: 60,
+        yoyo: true,
+        ease: 'Quad.easeOut',
+        onComplete: () => {
+          container.setScale(1, 1);
+        },
+      });
+      bg.setFillStyle(COLORS.accent, 0.85);
+      bg.setStrokeStyle(2, 0xffffff, 0.9);
       onClick();
     });
-    container.on('pointerup', () => bg.setScale(1));
+    // pointerup 在按钮外 → 只恢复状态, 不触发
+    container.on('pointerupoutside', () => {
+      pressed = false;
+      container.setScale(1, 1);
+      bg.setFillStyle(COLORS.accent, 0.85);
+      bg.setStrokeStyle(2, 0xffffff, 0.9);
+    });
 
     return container;
   }

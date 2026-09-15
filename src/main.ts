@@ -110,15 +110,26 @@ function applyManualLetterbox() {
   }
   // 注意: 绝对不要调 game.scale.resize()! 会破坏 canvas buffer!
 
-  // ========== 关键: 同步 Phaser 内部 bounds/displayScale ==========
-  // 我们手动改了 canvas 的 CSS 位置和大小, 但 Phaser 的 ScaleManager
-  // 不知道这件事, 它内部的 canvasBounds 和 displayScale 还是启动时的值.
-  // transformX/Y 用这两个过时值算输入坐标 → 移动端触摸点被映射到错误位置 → 按钮点不动!
-  // 必须手动让 Phaser 重读 canvas 的真实 CSS bounds.
-  game.scale.updateBounds();
-  const sb = game.scale.baseSize;
-  const cb = game.scale.canvasBounds;
-  game.scale.displayScale.set(sb.width / cb.width, sb.height / cb.height);
+  // ========== 关键: 重写 Phaser transformX/Y, 绕过 updateBounds 的 bug ==========
+  // Phaser 的 updateBounds() 有移动端偏移 bug:
+  //   bounds.y = clientRect.top + pageYOffset - document.documentElement.clientTop
+  //   在 Android Chrome 上 documentElement.clientTop 可能是非零 (状态栏/地址栏高度),
+  //   导致 bounds.top 被算小 → transformY(pageY) = (pageY - 偏小top) * scale → Y 偏移!
+  // 实测: 用户点按钮中心, Phaser 以为在按钮下方 → 要点按钮上方才命中.
+  //
+  // 正确做法: 用我们自己算出的纯 CSS values, 不要加 pageOffset, 不要减 clientTop.
+  // Pointer event 的 pageX = clientX + pageXOffset, 所以转换公式是:
+  //   pageX - pageXOffset = clientX (相对视口)
+  //   clientX - canvas CSS left = 相对 canvas 左上角
+  //   再乘以 scale 得到游戏坐标
+  const pageXOff = window.pageXOffset || 0;
+  const pageYOff = window.pageYOffset || 0;
+  game.scale.transformX = function (pageX: number) {
+    return (pageX - pageXOff - parseFloat(canvas.style.left)) * (GAME_WIDTH / cssW);
+  };
+  game.scale.transformY = function (pageY: number) {
+    return (pageY - pageYOff - parseFloat(canvas.style.top)) * (GAME_HEIGHT / cssH);
+  };
 }
 
 function refreshScale() {
