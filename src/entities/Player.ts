@@ -53,10 +53,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(40);
-    // 侧视角角色 (40×55 逻辑像素 → 120×165 屏幕像素)
+
+    // AI 生成的 PNG 是 360×360, 缩放到合适的游戏尺寸
+    // 游戏可用高度 ~624px, 角色目标 ~160px 高 → scale ≈ 0.44
+    this.setScale(0.44);
+
     // 碰撞体: 躯干部分, 窄而高, 避开前伸的手臂和枪
-    this.body!.setSize(this.width * 0.32, this.height * 0.72);
-    this.body!.setOffset(this.width * 0.30, this.height * 0.18);
+    // 必须在 setScale 之后设置, body 会自动跟随缩放
+    this.body!.setSize(this.width * 0.30, this.height * 0.70);
+    this.body!.setOffset(this.width * 0.35, this.height * 0.20);
+
     this.setCollideWorldBounds(true);
     this.setBounce(0);
 
