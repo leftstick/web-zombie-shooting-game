@@ -59,6 +59,8 @@ const config: Phaser.Types.Core.GameConfig = {
 } as Phaser.Types.Core.GameConfig;
 
 const game = new Phaser.Game(config);
+// 调试: 暴露到 window 方便排查移动端输入问题
+(window as any).__game = game;
 
 /* ---------- 手动 Letterbox 居中 ----------
  *
@@ -109,6 +111,16 @@ function applyManualLetterbox() {
     parent.style.overflow = 'hidden';
   }
   // 注意: 绝对不要调 game.scale.resize()! 会破坏 canvas buffer!
+
+  // ========== 关键: 同步 Phaser 内部 bounds/displayScale ==========
+  // 我们手动改了 canvas 的 CSS 位置和大小, 但 Phaser 的 ScaleManager
+  // 不知道这件事, 它内部的 canvasBounds 和 displayScale 还是启动时的值.
+  // transformX/Y 用这两个过时值算输入坐标 → 移动端触摸点被映射到错误位置 → 按钮点不动!
+  // 必须手动让 Phaser 重读 canvas 的真实 CSS bounds.
+  game.scale.updateBounds();
+  const sb = game.scale.baseSize;
+  const cb = game.scale.canvasBounds;
+  game.scale.displayScale.set(sb.width / cb.width, sb.height / cb.height);
 }
 
 function refreshScale() {
