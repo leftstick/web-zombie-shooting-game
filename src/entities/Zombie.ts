@@ -12,10 +12,10 @@ interface ZombieStats {
 }
 
 const ZOMBIE_STATS: Record<ZombieType, ZombieStats> = {
-  // AI 生成的僵尸 PNG 是 360×360, 基础 scale 0.35 适配游戏
-  normal: { hp: 60, speed: 60, damage: 10, score: 100, texture: 'zombie-normal', scale: 0.35 },
-  fast: { hp: 35, speed: 130, damage: 8, score: 150, texture: 'zombie-fast', scale: 0.33 },
-  tank: { hp: 180, speed: 35, damage: 25, score: 300, texture: 'zombie-tank', scale: 0.42 },
+  // 僵尸精灵帧是 120x200, 统一用 'zombie-f1' 作为初始帧
+  normal: { hp: 60, speed: 60, damage: 10, score: 100, texture: 'zombie-f1', scale: 1.0 },
+  fast: { hp: 35, speed: 130, damage: 8, score: 150, texture: 'zombie-f1', scale: 0.9 },
+  tank: { hp: 180, speed: 35, damage: 25, score: 300, texture: 'zombie-f1', scale: 1.2 },
 };
 
 /**
@@ -110,6 +110,10 @@ export class Zombie extends Phaser.Physics.Arcade.Sprite {
       const dir = Math.sign(this.playerRef.x - this.x);
       this.setVelocityX(dir * this.speed);
       this.setFlipX(dir < 0);
+      // 播放走路动画
+      if (this.anims.currentAnim?.key !== 'zombie-walk') {
+        this.play('zombie-walk');
+      }
     }
 
     // 攻击冷却

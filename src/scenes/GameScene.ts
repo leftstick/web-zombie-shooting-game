@@ -52,14 +52,30 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     const charConfig = getCharacter(this.characterId);
-    this.physics.world.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
 
-    // 背景 (视差)
+    // === Tiled 地图 ===
+    const map = this.make.tilemap({ key: 'level1' });
+    const tileset = map.addTilesetImage('game-tiles', 'game-tiles')!;
+    const groundLayer = map.createLayer('ground', tileset, 0, 0)!;
+    groundLayer.setDepth(-5);
+
+    // 地图尺寸 → 世界边界
+    const mapW = groundLayer.width;
+    const mapH = groundLayer.height;
+    this.physics.world.setBounds(0, 0, mapW, GAME_HEIGHT);
+    this.cameras.main.setBounds(0, 0, mapW, GAME_HEIGHT);
+
+    // === 用 Tiled 瓦片创建碰撞体 ===
+    // tile id 1 (地面顶), 2 (地面主体), 3 (平台) → 都可碰撞
+    groundLayer.setCollision([1, 2, 3]);
+
+    // === 背景 ===
     this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'city-bg')
       .setScrollFactor(0.25).setDepth(-10);
 
-    // 地面组
-    this.createGround();
+    // === 路面 ===
+    const road = this.add.tileSprite(0, mapH - 8, mapW, 20, 'road-strip');
+    road.setOrigin(0, 0.5).setDepth(2);
 
     // 障碍物 (关卡设计)
     this.obstacles = this.physics.add.group({ immovable: true, allowGravity: false });
@@ -70,25 +86,25 @@ export class GameScene extends Phaser.Scene {
     this.zombies = this.physics.add.group({ classType: Zombie, maxSize: 50, runChildUpdate: true });
     this.pickups = this.physics.add.group({ classType: Pickup, maxSize: 20 });
 
-    // 输入 + 玩家
+    // 输入 + 玩家 (Y 坐标在地面上: mapH - 角色半高)
     this.inputManager = new InputManager(this);
     this.playerInputState = {
       moveAxis: 0, firing: false,
       consumeJump: () => this.inputManager.consumeJump(),
       consumeReload: () => this.inputManager.consumeReload(),
     };
-    this.player = new Player(this, 100, GAME_HEIGHT - GROUND_HEIGHT - 60,
+    const playerY = mapH - 20; // 地面位置
+    this.player = new Player(this, 100, playerY - 100,
       charConfig, this.bullets, this.playerInputState);
 
     // 相机
-    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setDeadzone(GAME_WIDTH * 0.35, GAME_HEIGHT);
 
-    // 碰撞
-    this.physics.add.collider(this.player, this.ground);
+    // 碰撞 (瓦片碰撞 + 障碍物)
+    this.physics.add.collider(this.player, groundLayer);
     this.physics.add.collider(this.player, this.obstacles);
-    this.physics.add.collider(this.zombies, this.ground);
+    this.physics.add.collider(this.zombies, groundLayer);
     this.physics.add.collider(this.zombies, this.obstacles);
     this.physics.add.overlap(this.bullets, this.zombies, this.onBulletZombie, undefined, this);
     this.physics.add.overlap(this.bullets, this.obstacles, this.onBulletObstacle, undefined, this);
@@ -104,21 +120,6 @@ export class GameScene extends Phaser.Scene {
 
     this.createHUD();
     this.startFirstWave();
-  }
-
-  private createGround(): void {
-    this.ground = this.physics.add.staticGroup();
-    const tileSize = 64;
-    for (let x = 0; x < WORLD_WIDTH; x += tileSize) {
-      const t = this.ground.create(x + tileSize / 2, GAME_HEIGHT - GROUND_HEIGHT / 2, 'ground-tile');
-      (t as Phaser.Physics.Arcade.Image).refreshBody();
-    }
-    // 路面 (颜色不同)
-    const road = this.add.tileSprite(0, GAME_HEIGHT - GROUND_HEIGHT + 10, WORLD_WIDTH, 20, 'road-strip');
-    road.setOrigin(0, 0.5).setDepth(2);
-    // 地面顶线
-    this.add.rectangle(0, GAME_HEIGHT - GROUND_HEIGHT, WORLD_WIDTH, 4, COLORS.groundTop)
-      .setOrigin(0, 0.5).setDepth(5);
   }
 
   /** 浣熊市关卡布置 — 车辆/集装箱/油桶散布 */

@@ -2,8 +2,8 @@ import Phaser from 'phaser';
 import { COLORS, GAME_WIDTH, GAME_HEIGHT } from '../config/gameConfig';
 
 /**
- * PreloadScene — 加载所有外部 PNG 资源
- * BootScene 只生成程序化纹理, 外部资源在这里加载
+ * PreloadScene — 加载所有外部素材 (sprites + tilesets + maps)
+ * 使用相对路径 ./assets/ 兼容 GitHub Pages 项目页
  */
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -11,51 +11,90 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // 加载外部 PNG 资源 (AI 生成的像素艺术)
-    this.load.image('player-leon', './assets/leon.png');
-    this.load.image('player-leon-aim', './assets/leon.png');
-    this.load.image('player-claire', './assets/claire.png');
-    this.load.image('player-claire-aim', './assets/claire.png');
-    this.load.image('player-ada', './assets/ada.png');
-    this.load.image('player-ada-aim', './assets/ada.png');
-    this.load.image('zombie-normal', './assets/zombie.png');
-    this.load.image('zombie-fast', './assets/zombie.png');
-    this.load.image('zombie-tank', './assets/zombie.png');
+    // === 角色精灵 (3 帧动画: f1=站立, f2=走1, f3=走2) ===
+    this.load.image('leon-f1', './assets/sprites/leon-f1.png');
+    this.load.image('leon-f2', './assets/sprites/leon-f2.png');
+    this.load.image('leon-f3', './assets/sprites/leon-f3.png');
+    this.load.image('claire-f1', './assets/sprites/claire-f1.png');
+    this.load.image('claire-f2', './assets/sprites/claire-f2.png');
+    this.load.image('claire-f3', './assets/sprites/claire-f3.png');
+    this.load.image('ada-f1', './assets/sprites/ada-f1.png');
+    this.load.image('ada-f2', './assets/sprites/ada-f2.png');
+    this.load.image('ada-f3', './assets/sprites/ada-f3.png');
 
-    // 进度条
+    // === 僵尸精灵 ===
+    this.load.image('zombie-f1', './assets/sprites/zombie-f1.png');
+    this.load.image('zombie-f2', './assets/sprites/zombie-f2.png');
+    this.load.image('zombie-f3', './assets/sprites/zombie-f3.png');
+
+    // === 地图 tileset + Tiled JSON ===
+    this.load.image('game-tiles', './assets/tilesets/game-tiles.png');
+    this.load.tilemapTiledJSON('level1', './assets/maps/level1.json');
+
+    // === 进度条 ===
     const barW = 480;
     const barH = 24;
     const x = (GAME_WIDTH - barW) / 2;
     const y = GAME_HEIGHT / 2;
 
-    const bg = this.add.rectangle(x, y, barW, barH, COLORS.hpBg).setOrigin(0);
+    this.add.rectangle(x, y, barW, barH, COLORS.hpBg).setOrigin(0);
     const bar = this.add.rectangle(x + 2, y + 2, 0, barH - 4, COLORS.accent).setOrigin(0);
 
-    const tip = this.add
-      .text(GAME_WIDTH / 2, y - 60, 'LOADING...', {
-        fontSize: '28px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-        letterSpacing: 6,
-      })
-      .setOrigin(0.5);
+    this.add.text(GAME_WIDTH / 2, y - 60, 'LOADING...', {
+      fontSize: '28px', color: '#ffffff', fontStyle: 'bold', letterSpacing: 6,
+    }).setOrigin(0.5);
 
     this.load.on('progress', (p: number) => {
       bar.width = (barW - 4) * p;
     });
 
     this.load.on('loaderror', (file: Phaser.Loader.File) => {
-      console.error('[PreloadScene] FAILED to load:', file.key, file.src);
-      tip.setText('LOAD FAILED: ' + file.key);
-      tip.setColor('#ff4444');
+      console.error('[PreloadScene] FAILED:', file.key, file.src);
     });
   }
 
   create(): void {
-    // Phaser 会在所有 load.image 完成后自动触发 create()
-    // 不用检查 totalToLoad, 直接跳转
-    this.time.delayedCall(300, () => {
-      this.scene.start('MainMenuScene');
-    });
+    // 创建动画 (全局只创建一次)
+    this.createAnimations();
+    this.scene.start('MainMenuScene');
+  }
+
+  private createAnimations(): void {
+    // 玩家走路动画 (3帧循环)
+    for (const char of ['leon', 'claire', 'ada']) {
+      if (!this.anims.exists(`${char}-walk`)) {
+        this.anims.create({
+          key: `${char}-walk`,
+          frames: [
+            { key: `${char}-f1` },
+            { key: `${char}-f2` },
+            { key: `${char}-f3` },
+          ],
+          frameRate: 8,
+          repeat: -1,
+        });
+      }
+      if (!this.anims.exists(`${char}-idle`)) {
+        this.anims.create({
+          key: `${char}-idle`,
+          frames: [{ key: `${char}-f1` }],
+          frameRate: 1,
+        });
+      }
+    }
+
+    // 僵尸走路动画
+    if (!this.anims.exists('zombie-walk')) {
+      this.anims.create({
+        key: 'zombie-walk',
+        frames: [
+          { key: 'zombie-f1' },
+          { key: 'zombie-f2' },
+          { key: 'zombie-f3' },
+        ],
+        frameRate: 6,
+        repeat: -1,
+      });
+    }
   }
 }

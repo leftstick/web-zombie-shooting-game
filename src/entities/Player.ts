@@ -41,7 +41,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     bullets: Phaser.Physics.Arcade.Group,
     inputRef: Player['inputRef']
   ) {
-    super(scene, x, y, `player-${charConfig.id}`);
+    // 用第一帧创建 sprite, 之后通过 play() 切换动画
+    super(scene, x, y, `${charConfig.id}-f1`);
     this.charConfig = charConfig;
     this.hp = charConfig.maxHp;
     this.maxHp = charConfig.maxHp;
@@ -54,14 +55,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     scene.physics.add.existing(this);
     this.setDepth(40);
 
-    // AI 生成的 PNG 是 360×360, 缩放到合适的游戏尺寸
-    // 游戏可用高度 ~624px, 角色目标 ~160px 高 → scale ≈ 0.44
-    this.setScale(0.44);
+    // 精灵帧是 120x200, 缩放到游戏内合适大小
+    this.setScale(1.0);
 
-    // 碰撞体: 躯干部分, 窄而高, 避开前伸的手臂和枪
-    // 必须在 setScale 之后设置, body 会自动跟随缩放
-    this.body!.setSize(this.width * 0.30, this.height * 0.70);
-    this.body!.setOffset(this.width * 0.35, this.height * 0.20);
+    // 碰撞体: 躯干部分, 窄而高
+    this.body!.setSize(this.width * 0.35, this.height * 0.75);
+    this.body!.setOffset(this.width * 0.32, this.height * 0.15);
 
     this.setCollideWorldBounds(true);
     this.setBounce(0);
@@ -102,12 +101,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // ---- 水平移动 ----
     const axis = this.inputRef.moveAxis;
-    if (axis !== 0) {
+    const isMoving = axis !== 0;
+    if (isMoving) {
       this.setVelocityX(axis * this.charConfig.moveSpeed);
       this.facing = axis > 0 ? 1 : -1;
       this.setFlipX(this.facing === -1);
     } else {
       this.setVelocityX(0);
+    }
+
+    // ---- 动画切换 ----
+    const animKey = `${this.charConfig.id}-walk`;
+    const idleKey = `${this.charConfig.id}-idle`;
+    if (isMoving && this.anims.currentAnim?.key !== animKey) {
+      this.play(animKey);
+    } else if (!isMoving && this.anims.currentAnim?.key !== idleKey) {
+      this.play(idleKey);
     }
 
     // ---- 跳跃 ----
