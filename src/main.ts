@@ -60,10 +60,26 @@ const config: Phaser.Types.Core.GameConfig = {
 
 const game = new Phaser.Game(config);
 
-/* ---------- 手动 Letterbox 居中 ---------- */
+/* ---------- 手动 Letterbox 居中 ----------
+ *
+ *  核心约束 (绝对不能破):
+ *    canvas.width / canvas.height (像素 buffer) 必须永远是 GAME_WIDTH × GAME_HEIGHT
+ *    任何时候都不能调 game.scale.resize(w, h) 改 buffer 尺寸!
+ *    只通过 CSS style.width / style.height 控制显示尺寸
+ *
+ *  之前 game.scale.resize(w, h) 把 buffer 改成了 viewport 像素,
+ *  导致游戏逻辑世界 (camera.view) 和渲染目标完全错位,
+ *  画面被压扁/截断 —— 这就是横屏后画面不对的根因
+ * ========================================= */
 function applyManualLetterbox() {
   const canvas = game.scale.canvas;
   if (!canvas) return;
+
+  // 安全校验: 如果 canvas buffer 被意外改过, 立刻恢复
+  if (canvas.width !== GAME_WIDTH || canvas.height !== GAME_HEIGHT) {
+    canvas.width = GAME_WIDTH;
+    canvas.height = GAME_HEIGHT;
+  }
 
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -92,9 +108,7 @@ function applyManualLetterbox() {
     parent.style.height = h + 'px';
     parent.style.overflow = 'hidden';
   }
-
-  // 告诉 Phaser scale manager 视口尺寸 (虽然 NONE 模式下它不做什么)
-  game.scale.resize(w, h);
+  // 注意: 绝对不要调 game.scale.resize()! 会破坏 canvas buffer!
 }
 
 function refreshScale() {
