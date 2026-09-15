@@ -59,8 +59,6 @@ const config: Phaser.Types.Core.GameConfig = {
 } as Phaser.Types.Core.GameConfig;
 
 const game = new Phaser.Game(config);
-// 调试: 暴露到 window 方便排查移动端输入问题
-(window as any).__game = game;
 
 /* ---------- 手动 Letterbox 居中 ----------
  *
