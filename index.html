@@ -9,9 +9,11 @@
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="screen-orientation" content="landscape" />
     <title>BIOHAZARD · 生化危机 · 横版枪战</title>
     <style>
+      :root {
+        --vh: 100vh;
+      }
       html,
       body {
         margin: 0;
@@ -24,24 +26,31 @@
         overscroll-behavior: none;
         -webkit-user-select: none;
         user-select: none;
+        -webkit-tap-highlight-color: transparent;
         font-family: 'Courier New', monospace;
       }
       #game-root {
         position: fixed;
         inset: 0;
+        width: 100vw;
+        height: var(--vh);
         display: flex;
         align-items: center;
         justify-content: center;
+        z-index: 1;
       }
       canvas {
         display: block;
         image-rendering: pixelated;
+        -webkit-touch-callout: none;
       }
-      /* 竖屏时显示旋转提示 */
+      /* 旋转提示遮罩 —— 始终盖住 canvas, 防止竖屏时误触 */
       #rotate-hint {
-        display: none;
+        display: flex;
         position: fixed;
         inset: 0;
+        width: 100vw;
+        height: var(--vh);
         background: #000;
         color: #fff;
         z-index: 9999;
@@ -49,38 +58,49 @@
         align-items: center;
         justify-content: center;
         text-align: center;
-        gap: 24px;
+        gap: 28px;
         padding: 24px;
+        pointer-events: auto;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s;
+      }
+      #rotate-hint.show {
+        opacity: 1;
+        visibility: visible;
       }
       #rotate-hint .icon {
-        font-size: 72px;
+        font-size: 80px;
         animation: rotateHint 2s ease-in-out infinite;
       }
       #rotate-hint .title {
-        font-size: 22px;
+        font-size: 24px;
         font-weight: bold;
         letter-spacing: 2px;
+        color: #ff1744;
       }
       #rotate-hint .sub {
         font-size: 14px;
         opacity: 0.7;
       }
-      @keyframes rotateHint {
-        0%,
-        100% {
-          transform: rotate(0deg);
-        }
-        50% {
-          transform: rotate(90deg);
-        }
+      #rotate-hint .confirm-btn {
+        margin-top: 20px;
+        padding: 14px 40px;
+        background: #ff1744;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: bold;
+        letter-spacing: 2px;
+        cursor: pointer;
       }
-      @media (orientation: portrait) {
-        #rotate-hint {
-          display: flex;
-        }
-        #game-root {
-          display: none;
-        }
+      #rotate-hint .confirm-btn:active {
+        background: #d50000;
+      }
+      @keyframes rotateHint {
+        0%, 100% { transform: rotate(0deg); }
+        50% { transform: rotate(90deg); }
       }
     </style>
   </head>
@@ -90,7 +110,49 @@
       <div class="icon">📱</div>
       <div class="title">请旋转设备至横屏</div>
       <div class="sub">本游戏必须在横屏模式下游玩</div>
+      <button class="confirm-btn" id="rotate-confirm">已转为横屏 · 继续</button>
     </div>
     <script type="module" src="/src/main.ts"></script>
+    <script>
+      // 动态视口高度变量 (iOS Safari 地址栏伸缩)
+      function updateVh() {
+        document.documentElement.style.setProperty('--vh', window.innerHeight + 'px');
+      }
+      updateVh();
+      window.addEventListener('resize', updateVh);
+      window.addEventListener('orientationchange', () => { setTimeout(updateVh, 200); });
+
+      // 横屏判定
+      function isLandscape() {
+        return window.innerWidth > window.innerHeight;
+      }
+      const hint = document.getElementById('rotate-hint');
+      const confirmBtn = document.getElementById('rotate-confirm');
+      function syncHint() {
+        if (isLandscape()) {
+          hint.classList.remove('show');
+        } else {
+          hint.classList.add('show');
+        }
+      }
+      syncHint();
+      window.addEventListener('resize', syncHint);
+      window.addEventListener('orientationchange', () => { setTimeout(syncHint, 200); });
+      confirmBtn.addEventListener('click', () => {
+        if (isLandscape()) {
+          hint.classList.remove('show');
+        } else {
+          // 强制旋转提示
+        }
+      });
+
+      // 阻止移动端默认行为吞掉点击
+      document.addEventListener('touchstart', function(e) {
+        // 不阻止输入框
+        const tag = e.target && e.target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
+        e.preventDefault();
+      }, { passive: false });
+    </script>
   </body>
 </html>

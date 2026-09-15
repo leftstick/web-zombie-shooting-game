@@ -16,14 +16,13 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    // 锁定横屏比例
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
   },
   physics: {
     default: 'arcade',
     arcade: {
-      gravity: { x: 0, y: 1200 },
+      gravity: { x: 0, y: 1400 },
       debug: false,
     },
   },
@@ -36,19 +35,51 @@ const config: Phaser.Types.Core.GameConfig = {
     GameOverScene,
   ],
   render: {
-    pixelArt: false,
-    antialias: true,
+    pixelArt: true,
+    antialias: false,
   },
   input: {
-    activePointers: 3, // 支持多点触控 (摇杆 + 按钮)
+    activePointers: 3,
   },
-  // 切换标签页时不暂停游戏 (对自动化测试和移动端切后台友好)
-  disableVisibilityChange: true,
+  disableVisibilityChange: false,
 } as Phaser.Types.Core.GameConfig;
 
-// 防止移动端双击缩放
+// 启动游戏
+const game = new Phaser.Game(config);
+
+// 旋转/resize 时强制刷新 Phaser 画布
+function refreshScale() {
+  // 双保险: 先延迟让浏览器完成旋转
+  setTimeout(() => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    game.scale.resize(w, h);
+    // FIT 模式下还要 refresh 内部缩放计算
+    game.scale.refresh();
+    // 通知所有场景 (场景自行处理)
+    game.scene.getScenes(true).forEach((scene) => {
+      scene.events.emit('orientationchange', w, h);
+    });
+  }, 150);
+}
+
+window.addEventListener('orientationchange', refreshScale);
+window.addEventListener('resize', refreshScale);
+
+// visibility change 处理
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    // 页面隐藏 — 暂停所有活跃场景
+    game.scene.getScenes(true).forEach((s) => game.scene.pause(s));
+  } else {
+    game.scene.getScenes().forEach((s) => {
+      if (!s.scene.isActive()) return;
+      game.scene.resume(s);
+    });
+    refreshScale();
+  }
+});
+
+// 禁止双击缩放
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('dblclick', (e) => e.preventDefault());
-
-// 启动游戏
-new Phaser.Game(config);
