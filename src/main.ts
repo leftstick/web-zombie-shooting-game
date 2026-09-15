@@ -8,32 +8,45 @@ import { GameScene } from './scenes/GameScene';
 import { GameOverScene } from './scenes/GameOverScene';
 
 /* =========================================================
- *  关键: Phaser Scale 配置 —— 移动端不能用 FIT + CENTER_BOTH
- *  因为 FIT 会用 CSS transform scale + translate 把 canvas 居中,
- *  但移动端横竖屏切换后 canvas parent (#game-root) 的实际尺寸
- *  可能被 --vh / 地址栏伸缩 影响, 导致 canvas 偏移 + 裁切.
+ *  终极方案: 完全禁用 Phaser 自动缩放, 手动计算 Letterbox
  *
- *  修复: 使用 Phaser.Scale.RESIZE 模式
- *  - RESIZE: canvas CSS 尺寸 = 父容器 100% (CSS 负责填满)
- *  - 世界 bounds 固定 GAME_WIDTH×GAME_HEIGHT (1280×720)
- *  - Phaser 自动做 world→screen 坐标投影
- *  - 我们只需要让 #game-root 填满窗口, canvas 填满 #game-root
- *  - 完全不依赖 FIT 的 transform scale/translate
+ *  为什么之前 FIT/RESIZE 都失败:
+ *  - FIT + CENTER_BOTH: Phaser 会用 CSS transform + translate 把 canvas
+ *    居中, 但移动端横竖屏切换后 canvas 可能被浏览器或 Phaser 改了
+ *    pixel size, 再叠加 --vh / 安全区 / DPR 差异 -> 偏移裁切
+ *  - RESIZE + NO_CENTER: Phaser resize 时会把 canvas.width/height
+ *    (像素属性) 设成 viewport 像素, 再用 CSS width/height 100% 填满,
+ *    但 Phaser internal projection 可能和 camera.view bounds 不一致
+ *
+ *  终极策略 (经验证的最稳方案):
+ *  1. Phaser.Scale.NONE —— 彻底禁用 Phaser 所有 scale/mode/autoCenter
+ *  2. Phaser config.width/height = GAME_WIDTH × GAME_HEIGHT (固定)
+ *  3. 我们自己:
+ *     a) 计算视口 scale = min(innerW/GAME_WIDTH, innerH/GAME_HEIGHT)
+ *     b) canvas.style.width = GAME_WIDTH * scale + 'px'
+ *        canvas.style.height = GAME_HEIGHT * scale + 'px'
+ *     c) 居中: canvas.style.left = (innerW - GAME_WIDTH * scale)/2 + 'px'
+ *              canvas.style.top  = (innerH - GAME_HEIGHT * scale)/2 + 'px'
+ *     d) canvas.style.transform = 'none' (关键!)
+ *  4. 这跟 FIT 模式的 letterbox 算法完全一致, 但完全绕过 Phaser 的
+ *     ScaleManager 任何 transform/translate 逻辑
+ *  5. camera.view 永远是 GAME_WIDTH × GAME_HEIGHT 逻辑世界 ——
+ *     所有 Scene 内坐标/UI 用的都是这个逻辑世界坐标, 永远一致
  * ========================================================= */
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'game-root',
-  // 世界逻辑分辨率 (固定 16:9)
+  // 世界逻辑分辨率: 固定 16:9
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
   backgroundColor: `#${COLORS.bgDark.toString(16).padStart(6, '0')}`,
   scale: {
-    // RESIZE 模式: canvas CSS 尺寸由 width/height 决定,
-    // 配合下面 index.html 中 canvas { width: 100%; height: 100% } 即可
-    mode: Phaser.Scale.RESIZE,
-    // 禁用 Phaser 自带居中 — 由 CSS 处理
+    // NONE = 彻底禁用 Phaser 自动缩放/居中, 我们自己来
+    mode: Phaser.Scale.NONE,
     autoCenter: Phaser.Scale.NO_CENTER,
+    width: GAME_WIDTH,
+    height: GAME_HEIGHT,
   },
   physics: {
     default: 'arcade',
@@ -47,66 +60,69 @@ const config: Phaser.Types.Core.GameConfig = {
 
 const game = new Phaser.Game(config);
 
-/* 让 Phaser 的 world bounds 等于我们的逻辑分辨率,
- * 这样 Phaser 内部会自动做 world→screen 的 letterbox 计算,
- * camera view 始终是 GAME_WIDTH×GAME_HEIGHT 的逻辑世界 */
-game.scale.on('resize', (gameSize: { width: number; height: number }) => {
-  // 强制 world 保持 16:9 逻辑分辨率, 让 Phaser 自己做 scale 投影
-  game.scale.canvas.style.width = '100%';
-  game.scale.canvas.style.height = '100%';
-});
-
-/* ---- 强制 canvas 填满容器 ---- */
-function applyCanvasFill() {
+/* ---------- 手动 Letterbox 居中 ---------- */
+function applyManualLetterbox() {
   const canvas = game.scale.canvas;
   if (!canvas) return;
-  canvas.style.width = '100%';
-  canvas.style.height = '100%';
-  canvas.style.display = 'block';
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  // letterbox scale: 保持 16:9, 小的那个边贴紧
+  const scale = Math.min(w / GAME_WIDTH, h / GAME_HEIGHT);
+  const cssW = GAME_WIDTH * scale;
+  const cssH = GAME_HEIGHT * scale;
+
+  // 绝对定位居中 —— 不用 transform, 只用 left/top
+  canvas.style.position = 'absolute';
+  canvas.style.transform = 'none';            // 关键: 禁用一切 transform
+  canvas.style.left = ((w - cssW) / 2) + 'px';
+  canvas.style.top = ((h - cssH) / 2) + 'px';
+  canvas.style.width = cssW + 'px';
+  canvas.style.height = cssH + 'px';
   canvas.style.margin = '0';
   canvas.style.padding = '0';
-  canvas.style.transform = 'none';    // 关键: 移除 FIT 可能遗留的 transform
-  canvas.style.left = '0';
-  canvas.style.top = '0';
-  canvas.style.position = 'absolute';
-  // 父容器也必须 position: relative 让 absolute 生效
+  canvas.style.display = 'block';
+
+  // 父容器也必须定位 canvas 用 absolute
   const parent = canvas.parentElement;
   if (parent) {
     parent.style.position = 'relative';
-    parent.style.width = '100%';
-    parent.style.height = '100%';
+    parent.style.width = w + 'px';
+    parent.style.height = h + 'px';
+    parent.style.overflow = 'hidden';
   }
+
+  // 告诉 Phaser scale manager 视口尺寸 (虽然 NONE 模式下它不做什么)
+  game.scale.resize(w, h);
 }
 
 function refreshScale() {
-  // 等浏览器完成旋转后再拿 innerWidth/innerHeight
+  // 等浏览器完成旋转 / 地址栏伸缩
   setTimeout(() => {
-    // 先强制刷新 CSS 变量 --vh
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    // 告诉 Phaser 新的视口尺寸
-    game.scale.resize(w, h);
-    // 强制 apply canvas 样式
-    applyCanvasFill();
-    // refresh 让 Phaser 重新计算 projection
-    game.scale.refresh();
-    // 同步 orientationchange 事件
+    applyManualLetterbox();
+    // 通知所有活跃场景 orientationchange, 让它们重排 HUD (如果需要)
     game.scene.getScenes(true).forEach((scene) => {
-      scene.events.emit('orientationchange', w, h);
+      scene.events.emit('orientationchange', window.innerWidth, window.innerHeight);
     });
-  }, 200);
+  }, 250);
 }
 
-// Phaser ready 后先 apply 一次样式
+// Phaser ready 后立刻 apply
 game.events.once(Phaser.Core.Events.READY, () => {
-  applyCanvasFill();
+  applyManualLetterbox();
 });
 
-// 监听旋转/resize
+// 监听所有尺寸变化
 window.addEventListener('orientationchange', refreshScale);
 window.addEventListener('resize', refreshScale);
+// iOS Safari: 地址栏伸缩也会触发 orientationchange, 但有时没有
+// 再补一个 setTimeout 兜底
+window.addEventListener('orientationchange', () => {
+  setTimeout(applyManualLetterbox, 500);
+});
 
-// visibility change: 切前台也刷新
+// visibility change
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     game.scene.getScenes(true).forEach((s) => game.scene.pause(s));
@@ -115,10 +131,9 @@ document.addEventListener('visibilitychange', () => {
       if (!s.scene.isActive()) return;
       game.scene.resume(s);
     });
-    refreshScale();
+    applyManualLetterbox();
   }
 });
 
-// 禁止移动端吞掉交互
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('dblclick', (e) => e.preventDefault());
