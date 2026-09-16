@@ -1,10 +1,11 @@
 /**
  * 生化危机 · 横版枪战 — LittleJS 重写版
  *
- * 关键改进: 使用 LittleJS 内置触屏手柄, 彻底告别手写按钮坐标 bug
- * - touchGamepadEnable = true → 引擎自动渲染虚拟摇杆 + 按钮
- * - gamepadStick(0) 获取移动方向
- * - gamepadWasPressed(0/1/2) 检测射击/跳跃/换弹
+ * 核心修复:
+ * - 相机跟随玩家移动 (x 轴)
+ * - 调亮所有颜色, Canvas2D 下清晰可见
+ * - 去掉 useWebGL=false 参数 (默认 Canvas2D 路径)
+ * - 加 HTML DOM overlay 做封面/角色选择/GameOver
  */
 import * as LJ from 'littlejsengine';
 import {
@@ -22,15 +23,21 @@ import {
   setCanvasMaxSize,
   setObjectDefaultDamping,
   setObjectDefaultFriction,
+  setCanvasClearColor,
 } from 'littlejsengine';
 import type { Vector2, Color } from 'littlejsengine';
 import {
   Player, Zombie, Bullet, Obstacle,
   COLORS, WORLD_WIDTH,
-  type ZombieType, type ObstacleType,
+  type ZombieType, type ObstacleType, type CharType,
 } from './entities';
 
-// === 全局游戏状态 ===
+// === 游戏状态机 ===
+type GameState = 'menu' | 'playing' | 'gameOver';
+let gameState: GameState = 'menu';
+let selectedChar: CharType = 'leon';
+
+// === 全局游戏变量 ===
 let player: Player;
 let zombies: Zombie[] = [];
 let bullets: Bullet[] = [];
@@ -38,17 +45,99 @@ let obstacles: Obstacle[] = [];
 let waveNum = 1;
 let zombiesRemaining = 0;
 let spawnTimer = 0;
-let gameOver = false;
 let victory = false;
-let gameStarted = false;
 let waveText = '';
 let waveTextTimer = 0;
 
+// 相机 y 位置 (固定在地面上方)
 const GROUND_LEVEL_Y = -8;
+
+// === DOM 元素 ===
+const $ = (id: string) => document.getElementById(id)!;
+const overlay = $('overlay');
+const screenCover = $('screen-cover');
+const screenChar = $('screen-char');
+const screenGo = $('screen-go');
+const hint = $('hint');
+const goTitle = $('go-title');
+const goWave = $('go-wave');
+const goKills = $('go-kills');
+const goScore = $('go-score');
+
+function showScreen(screen: HTMLElement): void {
+  [screenCover, screenChar, screenGo].forEach(s => s.classList.add('hidden'));
+  screen.classList.remove('hidden');
+}
+
+function hideAllScreens(): void {
+  [screenCover, screenChar, screenGo].forEach(s => s.classList.add('hidden'));
+}
+
+function bindOverlayEvents(): void {
+  // 封面 → 角色选择
+  $('btn-start').addEventListener('click', () => showScreen(screenChar));
+
+  // 封面 → 操作说明 (简单 alert)
+  $('btn-howto').addEventListener('click', () => {
+    alert(
+      '【操作说明】\n\n' +
+      '触屏:\n' +
+      '· 左摇杆 移动\n' +
+      '· 右按钮① 射击 ②跳跃 ③换弹\n\n' +
+      '键盘:\n' +
+      '· ←/→ 或 A/D 移动\n' +
+      '· ↑/W/Space 跳跃\n' +
+      '· J 射击  R 换弹\n\n' +
+      '目标: 击退 3 波僵尸, 生存到最后!'
+    );
+  });
+
+  // 角色选择卡片
+  document.querySelectorAll('.char-card').forEach(cardEl => {
+    const card = cardEl as HTMLElement;
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.char-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedChar = card.dataset.char as CharType;
+    });
+  });
+
+  // 确认出击 → 开始游戏
+  $('btn-confirm').addEventListener('click', () => {
+    hideAllScreens();
+    hint.style.display = 'none';
+    gameState = 'playing';
+    // 小延迟让 overlay 消失后再启动游戏
+    setTimeout(() => startGame(), 50);
+  });
+
+  // 返回封面
+  $('btn-back').addEventListener('click', () => showScreen(screenCover));
+
+  // Game Over → 再战
+  $('btn-retry').addEventListener('click', () => {
+    hideAllScreens();
+    gameState = 'playing';
+    setTimeout(() => startGame(), 50);
+  });
+
+  // Game Over → 主菜单
+  $('btn-menu').addEventListener('click', () => {
+    gameState = 'menu';
+    showScreen(screenCover);
+    hint.style.display = '';
+  });
+}
 
 // === 引擎初始化 ===
 function gameInit(): void {
-  // 触屏手柄 — LittleJS 内置, 自动渲染 + 处理坐标
+  // 绑定 DOM 事件
+  bindOverlayEvents();
+
+  // Canvas2D 清屏色 (深灰, 不是纯黑)
+  setCanvasClearColor(new LJ.Color(0.08, 0.06, 0.10));
+
+  // 触屏手柄
   setTouchGamepadEnable(true);
   setTouchGamepadButtonCount(3);
   setTouchGamepadLeftStick(true);
@@ -58,30 +147,35 @@ function gameInit(): void {
   setTouchGamepadVibration(30);
   setVibrateEnable(true);
 
-  // 画面设置
+  // 画面
   setCanvasPixelated(true);
   setTilesPixelated(true);
   setCanvasMaxSize(vec2(1280, 720));
   LJ.setCameraScale(32);
 
-  // 物理设置
+  // 物理
   LJ.setGravity(vec2(0, -0.012));
   setObjectDefaultDamping(0.9);
   setObjectDefaultFriction(0.3);
 
-  startGame();
+  // 初始停在菜单
+  gameState = 'menu';
+  showScreen(screenCover);
 }
 
 function startGame(): void {
+  // 清除所有旧对象
   LJ.engineObjectsDestroy(true);
   zombies = [];
   bullets = [];
   obstacles = [];
-  gameOver = false;
   victory = false;
   waveNum = 1;
   zombiesRemaining = 4;
   spawnTimer = 120;
+
+  // 相机初始位置
+  LJ.setCameraPos(vec2(10, GROUND_LEVEL_Y + 3));
 
   // 创建地面 (大静态物体)
   const ground = new Obstacle(
@@ -93,23 +187,23 @@ function startGame(): void {
 
   createObstacles();
 
-  player = new Player(vec2(20, 0));
-  gameStarted = true;
+  // 创建玩家 (初始位置偏左, 给相机跟随留出空间)
+  player = new Player(vec2(10, 0), selectedChar);
   showWaveText('WAVE 1');
 }
 
 function createObstacles(): void {
   const obsData: { x: number; type: ObstacleType }[] = [
-    { x: 60,  type: 'barrel' },
-    { x: 85,  type: 'car' },
-    { x: 120, type: 'barrel' },
-    { x: 145, type: 'container' },
-    { x: 180, type: 'car' },
-    { x: 210, type: 'barrel' },
-    { x: 240, type: 'container' },
-    { x: 275, type: 'car' },
-    { x: 310, type: 'barrel' },
-    { x: 340, type: 'container' },
+    { x: 50,  type: 'barrel' },
+    { x: 75,  type: 'car' },
+    { x: 110, type: 'barrel' },
+    { x: 135, type: 'container' },
+    { x: 170, type: 'car' },
+    { x: 200, type: 'barrel' },
+    { x: 230, type: 'container' },
+    { x: 265, type: 'car' },
+    { x: 300, type: 'barrel' },
+    { x: 330, type: 'container' },
   ];
   for (const o of obsData) {
     let w: number, h: number;
@@ -134,14 +228,25 @@ function showWaveText(text: string): void {
 
 // === 每帧更新 ===
 function gameUpdate(): void {
-  if (!gameStarted || gameOver) {
-    if (gameOver && (LJ.keyWasPressed('Space') || LJ.gamepadWasPressed(9))) {
-      startGame();
-    }
-    return;
+  // 没有开始/没有 player, 不做游戏逻辑
+  if (gameState !== 'playing' || !player) return;
+
+  // 相机跟随玩家 x 轴, 限制在世界范围内
+  if (!player.destroyed) {
+    const targetCamX = Math.max(5, Math.min(WORLD_WIDTH - 5, player.pos.x));
+    // 平滑跟随
+    const cur = LJ.cameraPos;
+    LJ.setCameraPos(
+      vec2(cur.x + (targetCamX - cur.x) * 0.1, GROUND_LEVEL_Y + 3)
+    );
   }
 
-  // === 移动 (触屏摇杆 or 键盘) ===
+  if (player.destroyed && gameState === 'playing') {
+    // Player.destroy() 在 HP<=0 时被调用, 这里检查是否要结束游戏
+    // (由下面的 hp<=0 处理)
+  }
+
+  // === 移动 ===
   const stick = LJ.gamepadStick(0);
   let moveDir = stick.x;
   if (LJ.keyIsDown('ArrowLeft') || LJ.keyIsDown('KeyA')) moveDir = -1;
@@ -168,8 +273,7 @@ function gameUpdate(): void {
     if (!z.destroyed) z.setPlayer(player);
   }
 
-  // === 碰撞检测 (手动 AABB) ===
-  // 子弹 vs 僵尸
+  // === 碰撞 ===
   for (const b of bullets) {
     if (b.destroyed) continue;
     for (const z of zombies) {
@@ -189,7 +293,6 @@ function gameUpdate(): void {
       }
     }
   }
-  // 子弹 vs 障碍物
   for (const b of bullets) {
     if (b.destroyed) continue;
     for (const o of obstacles) {
@@ -201,7 +304,6 @@ function gameUpdate(): void {
       }
     }
   }
-  // 僵尸 vs 玩家
   for (const z of zombies) {
     if (z.destroyed) continue;
     if (overlap(z, player)) {
@@ -214,14 +316,15 @@ function gameUpdate(): void {
     }
   }
 
-  // 清理销毁的对象
+  // 清理
   bullets = bullets.filter(b => !b.destroyed);
   zombies = zombies.filter(z => !z.destroyed);
   obstacles = obstacles.filter(o => !o.destroyed);
 
-  if (player.hp <= 0) {
-    gameOver = true;
+  if (player.hp <= 0 && gameState === 'playing') {
+    gameState = 'gameOver';
     player.destroy();
+    showGameOver(false);
   }
 
   // 波次生成
@@ -240,11 +343,22 @@ function gameUpdate(): void {
       showWaveText(`WAVE ${waveNum}`);
     } else {
       victory = true;
-      gameOver = true;
+      gameState = 'gameOver';
+      showGameOver(true);
     }
   }
 
   if (waveTextTimer > 0) waveTextTimer--;
+}
+
+function showGameOver(won: boolean): void {
+  goTitle.textContent = won ? '★ 胜 利 ★' : '你 已 倒 下';
+  goTitle.className = 'go-title ' + (won ? 'win' : 'dead');
+  goWave.textContent = String(waveNum);
+  goKills.textContent = String(player.kills);
+  goScore.textContent = String(player.score);
+  // 延迟一下让玩家看到倒地状态
+  setTimeout(() => showScreen(screenGo), 800);
 }
 
 function overlap(a: { pos: Vector2; size: Vector2 }, b: { pos: Vector2; size: Vector2 }): boolean {
@@ -254,9 +368,10 @@ function overlap(a: { pos: Vector2; size: Vector2 }, b: { pos: Vector2; size: Ve
 
 function spawnZombie(): void {
   const side = Math.random() < 0.5 ? 'left' : 'right';
+  const camX = LJ.cameraPos.x;
   const x = side === 'left'
-    ? Math.max(2, player.pos.x - 40 - Math.random() * 20)
-    : Math.min(WORLD_WIDTH - 2, player.pos.x + 40 + Math.random() * 20);
+    ? Math.max(2, camX - 30 - Math.random() * 15)
+    : Math.min(WORLD_WIDTH - 2, camX + 30 + Math.random() * 15);
   const y = GROUND_LEVEL_Y + 2;
 
   let type: ZombieType = 'normal';
@@ -269,83 +384,98 @@ function spawnZombie(): void {
 
 // === 渲染前: 背景世界 ===
 function gameRender(): void {
-  if (!gameStarted) return;
+  // 天空渐变 (从上到下)
+  drawSkyGradient();
 
-  const targetX = player.destroyed ? LJ.cameraPos.x : player.pos.x;
-  LJ.setCameraPos(vec2(targetX, GROUND_LEVEL_Y + 3));
-
-  // 天空背景
-  LJ.drawRect(
-    vec2(LJ.cameraPos.x, GROUND_LEVEL_Y + 10),
-    vec2(WORLD_WIDTH, 30),
-    COLORS.bg, 0, false
-  );
-
-  // 远景建筑剪影
+  // 远景建筑剪影 (多层视差)
+  for (let i = 0; i < 25; i++) {
+    const baseX = i * 18;
+    const parallax = LJ.cameraPos.x * 0.15;
+    const bx = baseX - (parallax % 18);
+    const bh = 6 + Math.sin(i * 1.3) * 5 + (i % 3) * 2;
+    LJ.drawRect(
+      vec2(bx, GROUND_LEVEL_Y + bh / 2),
+      vec2(14, bh),
+      COLORS.farBuilding
+    );
+  }
   for (let i = 0; i < 20; i++) {
-    const bx = i * 25 + (LJ.cameraPos.x * 0.1 % 25);
-    const bh = 8 + Math.sin(i * 1.7) * 4;
+    const baseX = i * 25;
+    const parallax = LJ.cameraPos.x * 0.35;
+    const bx = baseX - (parallax % 25);
+    const bh = 10 + Math.sin(i * 2.1) * 6;
     LJ.drawRect(
       vec2(bx, GROUND_LEVEL_Y + bh / 2),
       vec2(18, bh),
-      new LJ.Color(0.08, 0.08, 0.12), 0, false
+      COLORS.midBuilding
     );
   }
 
-  // 地面
+  // 地面 (分成两段, 相机两侧各一段)
+  const camX = LJ.cameraPos.x;
+  // 相机左段
   LJ.drawRect(
-    vec2(LJ.cameraPos.x, GROUND_LEVEL_Y - 4),
-    vec2(WORLD_WIDTH, 8),
-    COLORS.ground, 0, false
+    vec2(camX - 500, GROUND_LEVEL_Y - 4),
+    vec2(1000, 8),
+    COLORS.ground
   );
+  // 地面亮线
   LJ.drawRect(
-    vec2(LJ.cameraPos.x, GROUND_LEVEL_Y),
-    vec2(WORLD_WIDTH, 0.3),
-    COLORS.groundTop, 0, false
+    vec2(camX - 500, GROUND_LEVEL_Y),
+    vec2(1000, 0.4),
+    COLORS.groundTop
+  );
+
+  // 地面裂缝/细节 (小色块)
+  for (let i = 0; i < 15; i++) {
+    const baseX = i * 14;
+    const parallax = camX * 0.8;
+    const dx = baseX - (parallax % 14);
+    LJ.drawRect(
+      vec2(dx, GROUND_LEVEL_Y + 0.15),
+      vec2(2, 0.1),
+      COLORS.groundLine
+    );
+  }
+}
+
+function drawSkyGradient(): void {
+  // 用 drawRectGradient 从上到下画天空
+  LJ.drawRectGradient(
+    vec2(LJ.cameraPos.x, GROUND_LEVEL_Y + 15),
+    vec2(WORLD_WIDTH + 1000, 30),
+    COLORS.skyTop,
+    COLORS.skyBottom
   );
 }
 
 // === 渲染后: HUD ===
 function gameRenderPost(): void {
-  if (!gameStarted) return;
+  if (gameState !== 'playing' || !player || player.destroyed) return;
 
   const screenW = LJ.mainCanvasSize.x;
   const screenH = LJ.mainCanvasSize.y;
 
-  if (gameOver) {
-    const text = victory ? '★ 胜利! 浣熊市突围成功 ★' : '你已倒下...';
-    const color = victory ? COLORS.accent : new LJ.Color(0.8, 0.2, 0.2);
-    LJ.drawTextScreen(text, vec2(screenW / 2, screenH / 2 - 20), 48, color,
-      4, new LJ.Color(0, 0, 0), 'center', 'monospace', 'bold');
-    LJ.drawTextScreen(`得分 ${player.score}  击杀 ${player.kills}`,
-      vec2(screenW / 2, screenH / 2 + 20), 24, new LJ.Color(1, 1, 1),
-      2, new LJ.Color(0, 0, 0), 'center', 'monospace', 'bold');
-    LJ.drawTextScreen('按 SPACE 或触屏重新开始',
-      vec2(screenW / 2, screenH / 2 + 60), 16, new LJ.Color(0.7, 0.7, 0.7),
-      1, new LJ.Color(0, 0, 0), 'center', 'monospace');
-    return;
-  }
-
   // HP 条
-  const hpW = 200, hpH = 16, hpX = 16, hpY = 16;
+  const hpW = 200, hpH = 18, hpX = 16, hpY = 16;
   drawRectScreen(vec2(hpX + hpW / 2, hpY + hpH / 2), vec2(hpW, hpH), COLORS.hpBg);
   const hpR = Math.max(0, player.hp / player.maxHp);
   drawRectScreen(vec2(hpX + hpW * hpR / 2, hpY + hpH / 2), vec2(hpW * hpR, hpH),
-    hpR > 0.3 ? COLORS.hp : new LJ.Color(0.9, 0.3, 0.3));
-  LJ.drawTextScreen(`HP ${Math.ceil(player.hp)}/${player.maxHp}`, vec2(hpX + 8, hpY + 2), 12,
+    hpR > 0.3 ? COLORS.hp : new LJ.Color(1, 0.5, 0.3));
+  LJ.drawTextScreen(`HP ${Math.ceil(player.hp)}/${player.maxHp}`, vec2(hpX + 8, hpY + 3), 13,
     new LJ.Color(1, 1, 1), 1, new LJ.Color(0, 0, 0), 'left', 'monospace', 'bold');
 
   // 弹药
   if (player.reloading) {
-    LJ.drawTextScreen('RELOADING...', vec2(16, 40), 16, new LJ.Color(1, 0.8, 0.2),
+    LJ.drawTextScreen('RELOADING...', vec2(16, 42), 16, new LJ.Color(1, 0.8, 0.2),
       1, new LJ.Color(0, 0, 0), 'left', 'monospace', 'bold');
     const rpW = 160;
-    drawRectScreen(vec2(16 + rpW / 2, 62), vec2(rpW, 4), COLORS.hpBg);
-    drawRectScreen(vec2(16 + rpW * player.reloadProgress / 2, 62),
-      vec2(rpW * player.reloadProgress, 4), new LJ.Color(0.5, 0.8, 1));
+    drawRectScreen(vec2(16 + rpW / 2, 64), vec2(rpW, 5), COLORS.hpBg);
+    drawRectScreen(vec2(16 + rpW * player.reloadProgress / 2, 64),
+      vec2(rpW * player.reloadProgress, 5), new LJ.Color(0.5, 0.8, 1));
   } else {
-    LJ.drawTextScreen(`弹药 ${player.ammo}/${player.maxAmmo}`, vec2(16, 40), 18,
-      new LJ.Color(1, 0.85, 0.1), 1, new LJ.Color(0, 0, 0), 'left', 'monospace', 'bold');
+    LJ.drawTextScreen(`弹药 ${player.ammo}/${player.maxAmmo}`, vec2(16, 42), 18,
+      new LJ.Color(1, 0.92, 0.2), 1, new LJ.Color(0, 0, 0), 'left', 'monospace', 'bold');
   }
 
   // 得分 + 波次
@@ -353,7 +483,7 @@ function gameRenderPost(): void {
     vec2(screenW - 16, 16), 18, new LJ.Color(1, 1, 1),
     1, new LJ.Color(0, 0, 0), 'right', 'monospace', 'bold');
   LJ.drawTextScreen(`WAVE ${waveNum}  剩余 ${zombiesRemaining + zombies.length}`,
-    vec2(screenW - 16, 40), 14, COLORS.accent,
+    vec2(screenW - 16, 42), 14, COLORS.accent,
     1, new LJ.Color(0, 0, 0), 'right', 'monospace', 'bold');
 
   // 波次提示
@@ -367,17 +497,16 @@ function gameRenderPost(): void {
   // 触屏按钮标签
   if (LJ.isTouchDevice) {
     const labels = ['射', '跳', '弹'];
-    const labelColors = [new LJ.Color(1, 1, 1), new LJ.Color(1, 1, 1), new LJ.Color(0.13, 0.13, 0.13)];
     for (let i = 0; i < 3; i++) {
       const bx = screenW - 60 - i * 65;
-      LJ.drawTextScreen(labels[i], vec2(bx, screenH - 55), 18, labelColors[i],
-        2, new LJ.Color(0, 0, 0, 0.5), 'center', 'monospace', 'bold');
+      LJ.drawTextScreen(labels[i], vec2(bx, screenH - 55), 18,
+        new LJ.Color(1, 1, 1), 2, new LJ.Color(0, 0, 0, 0.5), 'center', 'monospace', 'bold');
     }
   }
 }
 
 function drawRectScreen(pos: Vector2, size: Vector2, color: Color): void {
-  LJ.drawRect(pos, size, color, 0, false, true);
+  LJ.drawRect(pos, size, color, 0, true, true);
 }
 
 // === 启动引擎 ===

@@ -18,14 +18,204 @@
       overscroll-behavior: none;
       -webkit-user-select: none;
       user-select: none;
+      font-family: 'Courier New', monospace;
     }
     canvas {
       image-rendering: pixelated;
       -webkit-touch-callout: none;
     }
+
+    /* === Overlay 层 === */
+    #overlay {
+      position: fixed; inset: 0;
+      z-index: 100;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    #overlay .screen {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      pointer-events: auto;
+      background: linear-gradient(180deg, rgba(10,5,15,0.92) 0%, rgba(20,8,8,0.92) 100%);
+    }
+    #overlay .hidden { display: none !important; }
+
+    /* 封面 */
+    .cover-title {
+      font-size: clamp(36px, 10vw, 80px);
+      font-weight: 900;
+      color: #e83030;
+      text-shadow: 0 0 20px rgba(232,48,48,0.6), 4px 4px 0 #000;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .cover-subtitle {
+      font-size: clamp(14px, 3vw, 22px);
+      color: #cc8888;
+      letter-spacing: 0.3em;
+      margin-bottom: 40px;
+    }
+    .cover-tagline {
+      font-size: clamp(12px, 2.5vw, 16px);
+      color: #6688aa;
+      margin-bottom: 48px;
+      text-align: center;
+      padding: 0 20px;
+    }
+
+    /* 按钮 */
+    .btn {
+      padding: 14px 48px;
+      font-size: clamp(16px, 3.5vw, 22px);
+      font-weight: bold;
+      color: #fff;
+      background: linear-gradient(180deg, #c21818 0%, #8a0f0f 100%);
+      border: 2px solid #e83030;
+      border-radius: 4px;
+      cursor: pointer;
+      letter-spacing: 0.15em;
+      margin: 8px 0;
+      box-shadow: 0 4px 12px rgba(200,30,30,0.4);
+      transition: transform 0.1s, box-shadow 0.1s;
+      font-family: inherit;
+    }
+    .btn:active { transform: translateY(2px); box-shadow: 0 2px 6px rgba(200,30,30,0.4); }
+    .btn.secondary {
+      background: linear-gradient(180deg, #223355 0%, #112244 100%);
+      border-color: #4466aa;
+      box-shadow: 0 4px 12px rgba(60,90,160,0.4);
+    }
+
+    /* 角色选择 */
+    .char-grid {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 0 16px;
+    }
+    .char-card {
+      width: clamp(100px, 22vw, 140px);
+      padding: 16px 8px;
+      background: rgba(30,20,20,0.8);
+      border: 2px solid #443333;
+      border-radius: 6px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .char-card.selected {
+      border-color: #e83030;
+      background: rgba(60,20,20,0.9);
+      box-shadow: 0 0 16px rgba(232,48,48,0.5);
+    }
+    .char-card .char-sprite {
+      width: 48px; height: 80px;
+      margin: 0 auto 8px;
+      border-radius: 4px;
+      image-rendering: pixelated;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+    }
+    .char-card .char-name {
+      font-size: clamp(12px, 2.5vw, 16px);
+      font-weight: bold;
+      color: #ddd;
+      margin-bottom: 4px;
+    }
+    .char-card .char-desc {
+      font-size: 11px;
+      color: #999;
+      line-height: 1.3;
+    }
+    .char-card[data-char="leon"] .char-sprite { background: linear-gradient(180deg, #4a8aa8 0%, #4a8aa8 40%, #222 40%, #222 100%); }
+    .char-card[data-char="ada"] .char-sprite  { background: linear-gradient(180deg, #c44444 0%, #c44444 40%, #333 40%, #333 100%); }
+    .char-card[data-char="claire"] .char-sprite{ background: linear-gradient(180deg, #886644 0%, #886644 40%, #442222 40%, #442222 100%); }
+
+    /* Game Over */
+    .go-title {
+      font-size: clamp(32px, 8vw, 64px);
+      font-weight: 900;
+      margin-bottom: 24px;
+    }
+    .go-title.dead { color: #e83030; text-shadow: 0 0 20px rgba(232,48,48,0.6); }
+    .go-title.win  { color: #44cc66; text-shadow: 0 0 20px rgba(68,204,102,0.6); }
+    .go-stats {
+      font-size: clamp(14px, 3vw, 18px);
+      color: #ccc;
+      margin-bottom: 32px;
+      text-align: center;
+      line-height: 1.8;
+    }
+    .go-stats span { color: #e83030; font-weight: bold; }
+
+    /* 小提示 */
+    .hint {
+      position: fixed;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: #555;
+      pointer-events: none;
+      z-index: 50;
+    }
   </style>
 </head>
 <body>
+  <div id="overlay">
+    <!-- 封面 -->
+    <div class="screen" id="screen-cover">
+      <div class="cover-title">BIOHAZARD</div>
+      <div class="cover-subtitle">横版枪战</div>
+      <div class="cover-tagline">浣熊市的黎明尚未到来<br>而你的子弹 — 是最后的希望</div>
+      <button class="btn" id="btn-start">开 始 游 戏</button>
+      <button class="btn secondary" id="btn-howto">操 作 说 明</button>
+    </div>
+
+    <!-- 角色选择 -->
+    <div class="screen hidden" id="screen-char">
+      <div class="cover-subtitle">选 择 角 色</div>
+      <div class="char-grid">
+        <div class="char-card selected" data-char="leon">
+          <div class="char-sprite"></div>
+          <div class="char-name">LEON</div>
+          <div class="char-desc">平衡型<br>HP 150 / 弹药 30</div>
+        </div>
+        <div class="char-card" data-char="ada">
+          <div class="char-sprite"></div>
+          <div class="char-name">ADA</div>
+          <div class="char-desc">敏捷型<br>HP 120 / 射速 +30%</div>
+        </div>
+        <div class="char-card" data-char="claire">
+          <div class="char-sprite"></div>
+          <div class="char-name">CLAIRE</div>
+          <div class="char-desc">火力型<br>HP 180 / 伤害 +25%</div>
+        </div>
+      </div>
+      <button class="btn" id="btn-confirm">确 认 出 击</button>
+      <button class="btn secondary" id="btn-back">← 返 回</button>
+    </div>
+
+    <!-- Game Over / 胜利 -->
+    <div class="screen hidden" id="screen-go">
+      <div class="go-title dead" id="go-title">你 已 倒 下</div>
+      <div class="go-stats">
+        波次到达: <span id="go-wave">1</span><br>
+        击杀僵尸: <span id="go-kills">0</span><br>
+        最终得分: <span id="go-score">0</span>
+      </div>
+      <button class="btn" id="btn-retry">再 战 一 次</button>
+      <button class="btn secondary" id="btn-menu">回 主 菜 单</button>
+    </div>
+  </div>
+
+  <div class="hint" id="hint">手机横屏体验更佳 · 左侧摇杆移动 · 右侧按钮射击/跳跃/换弹</div>
+
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

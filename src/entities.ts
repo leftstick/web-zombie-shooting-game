@@ -5,46 +5,106 @@
 import * as LJ from 'littlejsengine';
 import type { Vector2, Color } from 'littlejsengine';
 
-// === 颜色主题 (生化危机暗黑风) ===
+// === 颜色主题 (生化危机风 — 调亮到 Canvas2D 可见级别) ===
 export const COLORS: Record<string, Color> = {
-  bg: new LJ.Color(0.04, 0.04, 0.06),
-  ground: new LJ.Color(0.14, 0.14, 0.18),
-  groundTop: new LJ.Color(0.22, 0.22, 0.28),
-  player: new LJ.Color(0.3, 0.68, 0.82),
-  zombie: new LJ.Color(0.42, 0.55, 0.15),
-  zombieFast: new LJ.Color(0.6, 0.2, 0.15),
-  zombieTank: new LJ.Color(0.2, 0.2, 0.25),
-  bullet: new LJ.Color(1, 0.85, 0.1),
-  blood: new LJ.Color(0.72, 0.11, 0.11),
-  hp: new LJ.Color(0.9, 0.2, 0.2),
-  hpBg: new LJ.Color(0.25, 0.25, 0.25),
-  barrel: new LJ.Color(0.55, 0.2, 0.1),
-  container: new LJ.Color(0.2, 0.25, 0.3),
-  car: new LJ.Color(0.35, 0.12, 0.12),
-  accent: new LJ.Color(1, 0.09, 0.27),
+  // 天空渐变 (从上到下)
+  skyTop:     new LJ.Color(0.45, 0.28, 0.32),   // 暗红灰
+  skyBottom:  new LJ.Color(0.22, 0.25, 0.35),   // 暗蓝灰
+  // 远景
+  farBuilding: new LJ.Color(0.18, 0.20, 0.28),
+  midBuilding: new LJ.Color(0.28, 0.30, 0.38),
+  // 地面
+  ground:      new LJ.Color(0.35, 0.32, 0.30),   // 混凝土灰
+  groundTop:   new LJ.Color(0.50, 0.46, 0.42),   // 亮面
+  groundLine:  new LJ.Color(0.55, 0.52, 0.48),   // 分割线
+  // 玩家
+  player:      new LJ.Color(0.35, 0.75, 0.95),   // 亮蓝 (Leon)
+  playerAda:   new LJ.Color(0.85, 0.35, 0.35),   // 红 (Ada)
+  playerClaire:new LJ.Color(0.85, 0.65, 0.40),   // 棕 (Claire)
+  playerSkin:  new LJ.Color(0.95, 0.80, 0.65),   // 肤色
+  playerBoots: new LJ.Color(0.20, 0.20, 0.22),   // 靴子
+  playerHair:  new LJ.Color(0.15, 0.12, 0.10),   // 头发
+  // 僵尸
+  zombie:      new LJ.Color(0.55, 0.70, 0.25),   // 绿
+  zombieFast:  new LJ.Color(0.85, 0.35, 0.25),   // 红
+  zombieTank:  new LJ.Color(0.35, 0.35, 0.42),   // 深灰
+  zombieSkin:  new LJ.Color(0.70, 0.82, 0.38),   // 僵尸皮肤
+  zombieBlood: new LJ.Color(0.60, 0.15, 0.15),   // 干血
+  // 子弹
+  bullet:      new LJ.Color(1.0, 0.92, 0.15),    // 亮黄
+  bulletTrail: new LJ.Color(1.0, 0.75, 0.25),    // 橙
+  // 血液粒子
+  blood:       new LJ.Color(0.85, 0.18, 0.18),
+  // UI
+  hp:          new LJ.Color(0.95, 0.25, 0.25),
+  hpBg:        new LJ.Color(0.30, 0.30, 0.30),
+  // 障碍物
+  barrel:      new LJ.Color(0.70, 0.30, 0.18),   // 红桶
+  container:   new LJ.Color(0.40, 0.48, 0.58),   // 蓝集装箱
+  containerStripe: new LJ.Color(0.75, 0.70, 0.35),
+  car:         new LJ.Color(0.55, 0.20, 0.20),   // 废车
+  carWindow:   new LJ.Color(0.20, 0.22, 0.28),
+  carWheel:    new LJ.Color(0.12, 0.12, 0.14),
+  // 强调色
+  accent:      new LJ.Color(1.0, 0.12, 0.30),
+  textDim:     new LJ.Color(0.75, 0.75, 0.75),
 };
 
 export const WORLD_WIDTH = 400;
+
+export type CharType = 'leon' | 'ada' | 'claire';
+
+export interface CharConfig {
+  hp: number;
+  maxHp: number;
+  ammo: number;
+  maxAmmo: number;
+  fireCooldown: number;
+  bulletDamage: number;
+  color: Color;
+  name: string;
+}
+
+export function getCharConfig(char: CharType): CharConfig {
+  switch (char) {
+    case 'ada':
+      return { hp: 120, maxHp: 120, ammo: 25, maxAmmo: 25, fireCooldown: 7, bulletDamage: 20, color: COLORS.playerAda, name: 'Ada' };
+    case 'claire':
+      return { hp: 180, maxHp: 180, ammo: 30, maxAmmo: 30, fireCooldown: 12, bulletDamage: 25, color: COLORS.playerClaire, name: 'Claire' };
+    default: // leon
+      return { hp: 150, maxHp: 150, ammo: 30, maxAmmo: 30, fireCooldown: 10, bulletDamage: 20, color: COLORS.player, name: 'Leon' };
+  }
+}
 
 /* ============================================================
  *  玩家
  * ============================================================ */
 export class Player extends LJ.EngineObject {
-  hp = 150;
-  maxHp = 150;
-  ammo = 30;
-  maxAmmo = 30;
+  hp: number;
+  maxHp: number;
+  ammo: number;
+  maxAmmo: number;
   score = 0;
   kills = 0;
   facing = 1;
-  private fireCooldown = 0;
+  fireCooldown: number;
+  bulletDamage: number;
   reloading = false;
   private reloadTimer = 0;
   private invincibleTime = 0;
+  charType: CharType;
 
-  constructor(pos: Vector2) {
+  constructor(pos: Vector2, charType: CharType = 'leon') {
+    const cfg = getCharConfig(charType);
     super(pos, LJ.vec2(2, 3.5));
-    this.color = COLORS.player;
+    this.charType = charType;
+    this.hp = cfg.hp;
+    this.maxHp = cfg.maxHp;
+    this.ammo = cfg.ammo;
+    this.maxAmmo = cfg.maxAmmo;
+    this.fireCooldown = cfg.fireCooldown;
+    this.bulletDamage = cfg.bulletDamage;
+    this.color = cfg.color;
     this.renderOrder = 10;
     this.gravityScale = 1;
     this.mass = 1;
@@ -61,11 +121,6 @@ export class Player extends LJ.EngineObject {
         this.reloading = false;
         this.ammo = this.maxAmmo;
       }
-    }
-    if (this.invincibleTime > 0 && Math.floor(this.invincibleTime / 3) % 2 === 0) {
-      this.color = new LJ.Color(1, 0.2, 0.2);
-    } else {
-      this.color = COLORS.player;
     }
   }
 
@@ -87,10 +142,10 @@ export class Player extends LJ.EngineObject {
     if (this.fireCooldown > 0 || this.reloading) return;
     if (this.ammo <= 0) { this.startReload(); return; }
     this.ammo--;
-    this.fireCooldown = 10;
+    this.fireCooldown = this.constructorFireCooldown;
     this.velocity.x -= this.facing * 0.1;
-    // 发射子弹 (Bullet 构造函数已自动加入 engineObjects, 不要重复 push)
-    new Bullet(LJ.vec2(this.pos.x + this.facing * 1.5, this.pos.y + 0.3), this.facing);
+    // 发射子弹
+    new Bullet(LJ.vec2(this.pos.x + this.facing * 1.5, this.pos.y + 0.3), this.facing, this.bulletDamage);
     // 枪口闪光粒子
     new LJ.ParticleEmitter(
       LJ.vec2(this.pos.x + this.facing * 1.5, this.pos.y + 0.3), // pos
@@ -111,6 +166,11 @@ export class Player extends LJ.EngineObject {
     );
   }
 
+  // 存原始 fireCooldown 用于重置 (因为 this.fireCooldown 在 update 里递减)
+  private get constructorFireCooldown(): number {
+    return getCharConfig(this.charType).fireCooldown;
+  }
+
   startReload(): void {
     if (this.reloading || this.ammo >= this.maxAmmo) return;
     this.reloading = true;
@@ -129,19 +189,37 @@ export class Player extends LJ.EngineObject {
 
   heal(amount: number): void { this.hp = Math.min(this.maxHp, this.hp + amount); }
   addAmmo(amount: number): void { this.ammo = Math.min(this.maxAmmo, this.ammo + amount); }
+
+  // 自定义 render — 强制用 drawRect 画亮色方块
+  render(): void {
+    if (this.destroyed) return;
+    // 身体 (用 drawRect, 默认走 Canvas2D)
+    LJ.drawRect(this.pos, this.size, this.color);
+    // 头部 (小方块)
+    const headSize = LJ.vec2(1.0, 1.0);
+    LJ.drawRect(LJ.vec2(this.pos.x, this.pos.y + this.size.y / 2 - headSize.y / 2), headSize, COLORS.playerSkin);
+    // 头发
+    LJ.drawRect(LJ.vec2(this.pos.x, this.pos.y + this.size.y / 2 - headSize.y / 2 + 0.3), LJ.vec2(1.0, 0.25), COLORS.playerHair);
+    // 枪
+    LJ.drawRect(LJ.vec2(this.pos.x + this.facing * 0.8, this.pos.y - 0.3), LJ.vec2(0.6, 0.15), new LJ.Color(0.3, 0.3, 0.35));
+    // 靴子
+    LJ.drawRect(LJ.vec2(this.pos.x - 0.4, this.pos.y - this.size.y / 2 + 0.1), LJ.vec2(0.35, 0.15), COLORS.playerBoots);
+    LJ.drawRect(LJ.vec2(this.pos.x + 0.4, this.pos.y - this.size.y / 2 + 0.1), LJ.vec2(0.35, 0.15), COLORS.playerBoots);
+  }
 }
 
 /* ============================================================
  *  子弹 — 水平飞行, 无重力
  * ============================================================ */
 export class Bullet extends LJ.EngineObject {
-  damage = 20;
+  damage: number;
   life = 120;
   facing: number;
 
-  constructor(pos: Vector2, facing: number) {
+  constructor(pos: Vector2, facing: number, damage: number = 20) {
     super(pos, LJ.vec2(1.5, 0.5));
     this.facing = facing;
+    this.damage = damage;
     this.color = COLORS.bullet;
     this.renderOrder = 20;
     this.velocity.x = facing * 1.2;
@@ -159,11 +237,15 @@ export class Bullet extends LJ.EngineObject {
     if (this.pos.x < -10 || this.pos.x > WORLD_WIDTH + 10) this.destroy();
   }
 
+  // 自定义 render
   render(): void {
-    // 显式 useWebGL=false, 强制 Canvas2D 渲染 (避免 WebGL 回退时的渲染问题)
-    LJ.drawRect(this.pos, this.size, COLORS.bullet, 0, false);
-    LJ.drawRect(LJ.vec2(this.pos.x - this.facing * 0.5, this.pos.y),
-      LJ.vec2(0.5, 0.2), new LJ.Color(1, 1, 0.6), 0, false);
+    if (this.destroyed) return;
+    // 子弹主体
+    LJ.drawRect(this.pos, this.size, COLORS.bullet);
+    // 弹头
+    LJ.drawRect(LJ.vec2(this.pos.x - this.facing * 0.75, this.pos.y), LJ.vec2(0.3, 0.4), new LJ.Color(1, 0.75, 0.25));
+    // 拖尾
+    LJ.drawRect(LJ.vec2(this.pos.x + this.facing * 1.0, this.pos.y), LJ.vec2(0.6, 0.3), COLORS.bulletTrail);
   }
 }
 
@@ -181,7 +263,6 @@ export class Zombie extends LJ.EngineObject {
   score: number;
   private attackCooldown = 0;
   private player: Player | null = null;
-  private hitFlash = 0;
 
   constructor(pos: Vector2, type: ZombieType = 'normal', waveLevel = 1) {
     let size: Vector2, hp: number, dmg: number, spd: number, scr: number, color: Color;
@@ -221,13 +302,6 @@ export class Zombie extends LJ.EngineObject {
       this.velocity.x = 0;
     }
     if (this.attackCooldown > 0) this.attackCooldown--;
-    if (this.hitFlash > 0) {
-      this.hitFlash--;
-      if (this.hitFlash === 0) {
-        this.color = this.type === 'fast' ? COLORS.zombieFast
-          : this.type === 'tank' ? COLORS.zombieTank : COLORS.zombie;
-      }
-    }
   }
 
   canAttack(): boolean {
@@ -239,7 +313,6 @@ export class Zombie extends LJ.EngineObject {
   takeDamage(dmg: number): void {
     this.hp -= dmg;
     this.color = new LJ.Color(1, 0.4, 0.4);
-    this.hitFlash = 6;
     new LJ.ParticleEmitter(
       this.pos, 0, 0.5, 0.2, 80, Math.PI, undefined,
       COLORS.blood, COLORS.blood,
@@ -249,16 +322,27 @@ export class Zombie extends LJ.EngineObject {
     if (this.hp <= 0) this.destroy();
   }
 
+  // 自定义 render
   render(): void {
-    super.render();
+    if (this.destroyed) return;
+    // 身体
+    LJ.drawRect(this.pos, this.size, this.color);
+    // 皮肤色块 (不同类型不同)
+    const skinSize = LJ.vec2(this.size.x * 0.8, this.size.y * 0.4);
+    const skinY = this.pos.y + this.size.y / 2 - skinSize.y / 2;
+    LJ.drawRect(LJ.vec2(this.pos.x, skinY), skinSize, COLORS.zombieSkin);
+    // 血渍
+    const bloodSize = LJ.vec2(this.size.x * 0.5, this.size.y * 0.15);
+    LJ.drawRect(LJ.vec2(this.pos.x, this.pos.y - this.size.y / 2 + 0.3), bloodSize, COLORS.zombieBlood);
+    // HP 条
     if (this.hp < this.maxHp) {
       const w = this.size.x;
       const hpR = this.hp / this.maxHp;
       LJ.drawRect(LJ.vec2(this.pos.x, this.pos.y + this.size.y / 2 + 0.3),
-        LJ.vec2(w, 0.15), COLORS.hpBg, 0, false);
+        LJ.vec2(w, 0.15), COLORS.hpBg);
       LJ.drawRect(
         LJ.vec2(this.pos.x - w / 2 + w * hpR / 2, this.pos.y + this.size.y / 2 + 0.3),
-        LJ.vec2(w * hpR, 0.15), COLORS.hp, 0, false);
+        LJ.vec2(w * hpR, 0.15), COLORS.hp);
     }
   }
 }
@@ -300,6 +384,39 @@ export class Obstacle extends LJ.EngineObject {
         );
       }
       this.destroy();
+    }
+  }
+
+  // 自定义 render — 让障碍物看起来像真东西
+  render(): void {
+    if (this.destroyed) return;
+    // 主色块
+    LJ.drawRect(this.pos, this.size, this.color);
+
+    // 细节: 根据类型画不同装饰
+    switch (this.type) {
+      case 'barrel':
+        // 桶箍 (两条深色横条)
+        LJ.drawRect(LJ.vec2(this.pos.x, this.pos.y + 0.5), LJ.vec2(this.size.x, 0.15), new LJ.Color(0.35, 0.15, 0.08));
+        LJ.drawRect(LJ.vec2(this.pos.x, this.pos.y - 0.5), LJ.vec2(this.size.x, 0.15), new LJ.Color(0.35, 0.15, 0.08));
+        break;
+      case 'container':
+        // 黄色警示条纹
+        LJ.drawRect(LJ.vec2(this.pos.x, this.pos.y + this.size.y / 2 - 0.2),
+          LJ.vec2(this.size.x, 0.15), COLORS.containerStripe);
+        LJ.drawRect(LJ.vec2(this.pos.x, this.pos.y - this.size.y / 2 + 0.2),
+          LJ.vec2(this.size.x, 0.15), COLORS.containerStripe);
+        break;
+      case 'car':
+        // 车窗
+        const winSize = LJ.vec2(this.size.x * 0.7, this.size.y * 0.35);
+        LJ.drawRect(LJ.vec2(this.pos.x, this.pos.y + this.size.y * 0.15), winSize, COLORS.carWindow);
+        // 轮子
+        LJ.drawRect(LJ.vec2(this.pos.x - this.size.x / 2 + 0.5, this.pos.y - this.size.y / 2 + 0.2),
+          LJ.vec2(0.8, 0.5), COLORS.carWheel);
+        LJ.drawRect(LJ.vec2(this.pos.x + this.size.x / 2 - 0.5, this.pos.y - this.size.y / 2 + 0.2),
+          LJ.vec2(0.8, 0.5), COLORS.carWheel);
+        break;
     }
   }
 }
