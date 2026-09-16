@@ -1,171 +1,391 @@
-import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, COLORS } from './config/gameConfig';
-import { BootScene } from './scenes/BootScene';
-import { PreloadScene } from './scenes/PreloadScene';
-import { MainMenuScene } from './scenes/MainMenuScene';
-import { CharacterSelectScene } from './scenes/CharacterSelectScene';
-import { GameScene } from './scenes/GameScene';
-import { GameOverScene } from './scenes/GameOverScene';
-
-/* =========================================================
- *  终极方案: 完全禁用 Phaser 自动缩放, 手动计算 Letterbox
+/**
+ * 生化危机 · 横版枪战 — LittleJS 重写版
  *
- *  为什么之前 FIT/RESIZE 都失败:
- *  - FIT + CENTER_BOTH: Phaser 会用 CSS transform + translate 把 canvas
- *    居中, 但移动端横竖屏切换后 canvas 可能被浏览器或 Phaser 改了
- *    pixel size, 再叠加 --vh / 安全区 / DPR 差异 -> 偏移裁切
- *  - RESIZE + NO_CENTER: Phaser resize 时会把 canvas.width/height
- *    (像素属性) 设成 viewport 像素, 再用 CSS width/height 100% 填满,
- *    但 Phaser internal projection 可能和 camera.view bounds 不一致
- *
- *  终极策略 (经验证的最稳方案):
- *  1. Phaser.Scale.NONE —— 彻底禁用 Phaser 所有 scale/mode/autoCenter
- *  2. Phaser config.width/height = GAME_WIDTH × GAME_HEIGHT (固定)
- *  3. 我们自己:
- *     a) 计算视口 scale = min(innerW/GAME_WIDTH, innerH/GAME_HEIGHT)
- *     b) canvas.style.width = GAME_WIDTH * scale + 'px'
- *        canvas.style.height = GAME_HEIGHT * scale + 'px'
- *     c) 居中: canvas.style.left = (innerW - GAME_WIDTH * scale)/2 + 'px'
- *              canvas.style.top  = (innerH - GAME_HEIGHT * scale)/2 + 'px'
- *     d) canvas.style.transform = 'none' (关键!)
- *  4. 这跟 FIT 模式的 letterbox 算法完全一致, 但完全绕过 Phaser 的
- *     ScaleManager 任何 transform/translate 逻辑
- *  5. camera.view 永远是 GAME_WIDTH × GAME_HEIGHT 逻辑世界 ——
- *     所有 Scene 内坐标/UI 用的都是这个逻辑世界坐标, 永远一致
- * ========================================================= */
+ * 关键改进: 使用 LittleJS 内置触屏手柄, 彻底告别手写按钮坐标 bug
+ * - touchGamepadEnable = true → 引擎自动渲染虚拟摇杆 + 按钮
+ * - gamepadStick(0) 获取移动方向
+ * - gamepadWasPressed(0/1/2) 检测射击/跳跃/换弹
+ */
+import * as LJ from 'littlejsengine';
+import {
+  vec2,
+  setTouchGamepadEnable,
+  setTouchGamepadButtonCount,
+  setTouchGamepadLeftStick,
+  setTouchGamepadAnalog,
+  setTouchGamepadAlpha,
+  setTouchGamepadSize,
+  setTouchGamepadVibration,
+  setVibrateEnable,
+  setCanvasPixelated,
+  setTilesPixelated,
+  setCanvasMaxSize,
+  setObjectDefaultDamping,
+  setObjectDefaultFriction,
+} from 'littlejsengine';
+import type { Vector2, Color } from 'littlejsengine';
+import {
+  Player, Zombie, Bullet, Obstacle,
+  COLORS, WORLD_WIDTH,
+  type ZombieType, type ObstacleType,
+} from './entities';
 
-const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.AUTO,
-  parent: 'game-root',
-  // 世界逻辑分辨率: 固定 16:9
-  width: GAME_WIDTH,
-  height: GAME_HEIGHT,
-  backgroundColor: `#${COLORS.bgDark.toString(16).padStart(6, '0')}`,
-  scale: {
-    // NONE = 彻底禁用 Phaser 自动缩放/居中, 我们自己来
-    mode: Phaser.Scale.NONE,
-    autoCenter: Phaser.Scale.NO_CENTER,
-    width: GAME_WIDTH,
-    height: GAME_HEIGHT,
-  },
-  physics: {
-    default: 'arcade',
-    arcade: { gravity: { x: 0, y: 1400 }, debug: false },
-  },
-  scene: [BootScene, PreloadScene, MainMenuScene, CharacterSelectScene, GameScene, GameOverScene],
-  render: { pixelArt: true, antialias: false },
-  input: { activePointers: 5 },
-  disableVisibilityChange: false,
-} as Phaser.Types.Core.GameConfig;
+// === 全局游戏状态 ===
+let player: Player;
+let zombies: Zombie[] = [];
+let bullets: Bullet[] = [];
+let obstacles: Obstacle[] = [];
+let waveNum = 1;
+let zombiesRemaining = 0;
+let spawnTimer = 0;
+let gameOver = false;
+let victory = false;
+let gameStarted = false;
+let waveText = '';
+let waveTextTimer = 0;
 
-const game = new Phaser.Game(config);
+const GROUND_LEVEL_Y = -8;
 
-/* ---------- 手动 Letterbox 居中 ----------
- *
- *  核心约束 (绝对不能破):
- *    canvas.width / canvas.height (像素 buffer) 必须永远是 GAME_WIDTH × GAME_HEIGHT
- *    任何时候都不能调 game.scale.resize(w, h) 改 buffer 尺寸!
- *    只通过 CSS style.width / style.height 控制显示尺寸
- *
- *  之前 game.scale.resize(w, h) 把 buffer 改成了 viewport 像素,
- *  导致游戏逻辑世界 (camera.view) 和渲染目标完全错位,
- *  画面被压扁/截断 —— 这就是横屏后画面不对的根因
- * ========================================= */
-function applyManualLetterbox() {
-  const canvas = game.scale.canvas;
-  if (!canvas) return;
+// === 引擎初始化 ===
+function gameInit(): void {
+  // 触屏手柄 — LittleJS 内置, 自动渲染 + 处理坐标
+  setTouchGamepadEnable(true);
+  setTouchGamepadButtonCount(3);
+  setTouchGamepadLeftStick(true);
+  setTouchGamepadAnalog(true);
+  setTouchGamepadAlpha(0.5);
+  setTouchGamepadSize(80);
+  setTouchGamepadVibration(30);
+  setVibrateEnable(true);
 
-  // 安全校验: 如果 canvas buffer 被意外改过, 立刻恢复
-  if (canvas.width !== GAME_WIDTH || canvas.height !== GAME_HEIGHT) {
-    canvas.width = GAME_WIDTH;
-    canvas.height = GAME_HEIGHT;
-  }
+  // 画面设置
+  setCanvasPixelated(true);
+  setTilesPixelated(true);
+  setCanvasMaxSize(vec2(1280, 720));
+  LJ.setCameraScale(32);
 
-  const w = window.innerWidth;
-  const h = window.innerHeight;
+  // 物理设置
+  LJ.setGravity(vec2(0, -0.012));
+  setObjectDefaultDamping(0.9);
+  setObjectDefaultFriction(0.3);
 
-  // letterbox scale: 保持 16:9, 小的那个边贴紧
-  const scale = Math.min(w / GAME_WIDTH, h / GAME_HEIGHT);
-  const cssW = GAME_WIDTH * scale;
-  const cssH = GAME_HEIGHT * scale;
-
-  // 绝对定位居中 —— 不用 transform, 只用 left/top
-  canvas.style.position = 'absolute';
-  canvas.style.transform = 'none';            // 关键: 禁用一切 transform
-  canvas.style.left = ((w - cssW) / 2) + 'px';
-  canvas.style.top = ((h - cssH) / 2) + 'px';
-  canvas.style.width = cssW + 'px';
-  canvas.style.height = cssH + 'px';
-  canvas.style.margin = '0';
-  canvas.style.padding = '0';
-  canvas.style.display = 'block';
-
-  // 父容器也必须定位 canvas 用 absolute
-  const parent = canvas.parentElement;
-  if (parent) {
-    parent.style.position = 'relative';
-    parent.style.width = w + 'px';
-    parent.style.height = h + 'px';
-    parent.style.overflow = 'hidden';
-  }
-  // 注意: 绝对不要调 game.scale.resize()! 会破坏 canvas buffer!
-
-  // ========== 关键: 重写 Phaser transformX/Y, 绕过 updateBounds 的 bug ==========
-  // Phaser 的 updateBounds() 有移动端偏移 bug:
-  //   bounds.y = clientRect.top + pageYOffset - document.documentElement.clientTop
-  //   在 Android Chrome 上 documentElement.clientTop 可能是非零 (状态栏/地址栏高度),
-  //   导致 bounds.top 被算小 → transformY(pageY) = (pageY - 偏小top) * scale → Y 偏移!
-  // 另外 pageXOffset/pageYOffset 必须每次实时读取, 不能缓存 ——
-  // 移动端地址栏伸缩会导致 pageOffset 变化, 缓存的旧值会让坐标偏移.
-  game.scale.transformX = function (pageX: number) {
-    const px = window.pageXOffset || 0;
-    const left = parseFloat(canvas.style.left) || 0;
-    return (pageX - px - left) * (GAME_WIDTH / cssW);
-  };
-  game.scale.transformY = function (pageY: number) {
-    const py = window.pageYOffset || 0;
-    const top = parseFloat(canvas.style.top) || 0;
-    return (pageY - py - top) * (GAME_HEIGHT / cssH);
-  };
+  startGame();
 }
 
-function refreshScale() {
-  // 等浏览器完成旋转 / 地址栏伸缩
-  setTimeout(() => {
-    applyManualLetterbox();
-    // 通知所有活跃场景 orientationchange, 让它们重排 HUD (如果需要)
-    game.scene.getScenes(true).forEach((scene) => {
-      scene.events.emit('orientationchange', window.innerWidth, window.innerHeight);
-    });
-  }, 250);
+function startGame(): void {
+  LJ.engineObjectsDestroy(true);
+  zombies = [];
+  bullets = [];
+  obstacles = [];
+  gameOver = false;
+  victory = false;
+  waveNum = 1;
+  zombiesRemaining = 4;
+  spawnTimer = 120;
+
+  // 创建地面 (大静态物体)
+  const ground = new Obstacle(
+    vec2(WORLD_WIDTH / 2, GROUND_LEVEL_Y - 4),
+    vec2(WORLD_WIDTH, 8),
+    'container'
+  );
+  ground.color = COLORS.ground;
+
+  createObstacles();
+
+  player = new Player(vec2(20, 0));
+  gameStarted = true;
+  showWaveText('WAVE 1');
 }
 
-// Phaser ready 后立刻 apply
-game.events.once(Phaser.Core.Events.READY, () => {
-  applyManualLetterbox();
-});
+function createObstacles(): void {
+  const obsData: { x: number; type: ObstacleType }[] = [
+    { x: 60,  type: 'barrel' },
+    { x: 85,  type: 'car' },
+    { x: 120, type: 'barrel' },
+    { x: 145, type: 'container' },
+    { x: 180, type: 'car' },
+    { x: 210, type: 'barrel' },
+    { x: 240, type: 'container' },
+    { x: 275, type: 'car' },
+    { x: 310, type: 'barrel' },
+    { x: 340, type: 'container' },
+  ];
+  for (const o of obsData) {
+    let w: number, h: number;
+    switch (o.type) {
+      case 'barrel': w = 2; h = 3; break;
+      case 'container': w = 6; h = 5; break;
+      case 'car': w = 5; h = 3; break;
+    }
+    const obs = new Obstacle(
+      vec2(o.x, GROUND_LEVEL_Y + h / 2),
+      vec2(w, h),
+      o.type
+    );
+    obstacles.push(obs);
+  }
+}
 
-// 监听所有尺寸变化
-window.addEventListener('orientationchange', refreshScale);
-window.addEventListener('resize', refreshScale);
-// iOS Safari: 地址栏伸缩也会触发 orientationchange, 但有时没有
-// 再补一个 setTimeout 兜底
-window.addEventListener('orientationchange', () => {
-  setTimeout(applyManualLetterbox, 500);
-});
+function showWaveText(text: string): void {
+  waveText = text;
+  waveTextTimer = 120;
+}
 
-// visibility change
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    game.scene.getScenes(true).forEach((s) => game.scene.pause(s));
+// === 每帧更新 ===
+function gameUpdate(): void {
+  if (!gameStarted || gameOver) {
+    if (gameOver && (LJ.keyWasPressed('Space') || LJ.gamepadWasPressed(9))) {
+      startGame();
+    }
+    return;
+  }
+
+  // === 移动 (触屏摇杆 or 键盘) ===
+  const stick = LJ.gamepadStick(0);
+  let moveDir = stick.x;
+  if (LJ.keyIsDown('ArrowLeft') || LJ.keyIsDown('KeyA')) moveDir = -1;
+  else if (LJ.keyIsDown('ArrowRight') || LJ.keyIsDown('KeyD')) moveDir = 1;
+  player.move(moveDir);
+
+  // === 跳跃 ===
+  if (LJ.gamepadWasPressed(1) || LJ.keyWasPressed('ArrowUp') || LJ.keyWasPressed('KeyW') || LJ.keyWasPressed('Space')) {
+    player.jump();
+  }
+
+  // === 射击 ===
+  if (LJ.gamepadIsDown(0) || LJ.keyIsDown('KeyJ')) {
+    player.tryFire();
+  }
+
+  // === 换弹 ===
+  if (LJ.gamepadWasPressed(2) || LJ.keyWasPressed('KeyR')) {
+    player.startReload();
+  }
+
+  // === 僵尸 AI ===
+  for (const z of zombies) {
+    if (!z.destroyed) z.setPlayer(player);
+  }
+
+  // === 碰撞检测 (手动 AABB) ===
+  // 子弹 vs 僵尸
+  for (const b of bullets) {
+    if (b.destroyed) continue;
+    for (const z of zombies) {
+      if (z.destroyed) continue;
+      if (overlap(b, z)) {
+        z.takeDamage(b.damage);
+        b.destroy();
+        if (z.hp <= 0) {
+          player.score += z.score;
+          player.kills++;
+          if (Math.random() < 0.2) {
+            if (Math.random() < 0.5) player.heal(20);
+            else player.addAmmo(15);
+          }
+        }
+        break;
+      }
+    }
+  }
+  // 子弹 vs 障碍物
+  for (const b of bullets) {
+    if (b.destroyed) continue;
+    for (const o of obstacles) {
+      if (o.destroyed) continue;
+      if (overlap(b, o)) {
+        o.takeDamage(b.damage);
+        b.destroy();
+        break;
+      }
+    }
+  }
+  // 僵尸 vs 玩家
+  for (const z of zombies) {
+    if (z.destroyed) continue;
+    if (overlap(z, player)) {
+      if (z.canAttack()) {
+        player.takeDamage(z.damage);
+        const dir = Math.sign(player.pos.x - z.pos.x) || 1;
+        player.velocity.x = dir * 0.25;
+        player.velocity.y = 0.15;
+      }
+    }
+  }
+
+  // 清理销毁的对象
+  bullets = bullets.filter(b => !b.destroyed);
+  zombies = zombies.filter(z => !z.destroyed);
+  obstacles = obstacles.filter(o => !o.destroyed);
+
+  if (player.hp <= 0) {
+    gameOver = true;
+    player.destroy();
+  }
+
+  // 波次生成
+  if (zombiesRemaining > 0) {
+    spawnTimer--;
+    if (spawnTimer <= 0) {
+      spawnZombie();
+      zombiesRemaining--;
+      spawnTimer = 80 - Math.min(waveNum * 5, 40);
+    }
+  } else if (zombies.length === 0) {
+    if (waveNum < 3) {
+      waveNum++;
+      zombiesRemaining = 3 + waveNum;
+      spawnTimer = 120;
+      showWaveText(`WAVE ${waveNum}`);
+    } else {
+      victory = true;
+      gameOver = true;
+    }
+  }
+
+  if (waveTextTimer > 0) waveTextTimer--;
+}
+
+function overlap(a: { pos: Vector2; size: Vector2 }, b: { pos: Vector2; size: Vector2 }): boolean {
+  return Math.abs(a.pos.x - b.pos.x) < (a.size.x + b.size.x) / 2 &&
+         Math.abs(a.pos.y - b.pos.y) < (a.size.y + b.size.y) / 2;
+}
+
+function spawnZombie(): void {
+  const side = Math.random() < 0.5 ? 'left' : 'right';
+  const x = side === 'left'
+    ? Math.max(2, player.pos.x - 40 - Math.random() * 20)
+    : Math.min(WORLD_WIDTH - 2, player.pos.x + 40 + Math.random() * 20);
+  const y = GROUND_LEVEL_Y + 2;
+
+  let type: ZombieType = 'normal';
+  const r = Math.random();
+  if (waveNum >= 3 && r < 0.2) type = 'tank';
+  else if (waveNum >= 2 && r < 0.45) type = 'fast';
+
+  zombies.push(new Zombie(vec2(x, y), type, waveNum));
+}
+
+// === 渲染前: 背景世界 ===
+function gameRender(): void {
+  if (!gameStarted) return;
+
+  const targetX = player.destroyed ? LJ.cameraPos.x : player.pos.x;
+  LJ.setCameraPos(vec2(targetX, GROUND_LEVEL_Y + 3));
+
+  // 天空背景
+  LJ.drawRect(
+    vec2(LJ.cameraPos.x, GROUND_LEVEL_Y + 10),
+    vec2(WORLD_WIDTH, 30),
+    COLORS.bg, 0, false
+  );
+
+  // 远景建筑剪影
+  for (let i = 0; i < 20; i++) {
+    const bx = i * 25 + (LJ.cameraPos.x * 0.1 % 25);
+    const bh = 8 + Math.sin(i * 1.7) * 4;
+    LJ.drawRect(
+      vec2(bx, GROUND_LEVEL_Y + bh / 2),
+      vec2(18, bh),
+      new LJ.Color(0.08, 0.08, 0.12), 0, false
+    );
+  }
+
+  // 地面
+  LJ.drawRect(
+    vec2(LJ.cameraPos.x, GROUND_LEVEL_Y - 4),
+    vec2(WORLD_WIDTH, 8),
+    COLORS.ground, 0, false
+  );
+  LJ.drawRect(
+    vec2(LJ.cameraPos.x, GROUND_LEVEL_Y),
+    vec2(WORLD_WIDTH, 0.3),
+    COLORS.groundTop, 0, false
+  );
+}
+
+// === 渲染后: HUD ===
+function gameRenderPost(): void {
+  if (!gameStarted) return;
+
+  const screenW = LJ.mainCanvasSize.x;
+  const screenH = LJ.mainCanvasSize.y;
+
+  if (gameOver) {
+    const text = victory ? '★ 胜利! 浣熊市突围成功 ★' : '你已倒下...';
+    const color = victory ? COLORS.accent : new LJ.Color(0.8, 0.2, 0.2);
+    LJ.drawTextScreen(text, vec2(screenW / 2, screenH / 2 - 20), 48, color,
+      4, new LJ.Color(0, 0, 0), 'center', 'monospace', 'bold');
+    LJ.drawTextScreen(`得分 ${player.score}  击杀 ${player.kills}`,
+      vec2(screenW / 2, screenH / 2 + 20), 24, new LJ.Color(1, 1, 1),
+      2, new LJ.Color(0, 0, 0), 'center', 'monospace', 'bold');
+    LJ.drawTextScreen('按 SPACE 或触屏重新开始',
+      vec2(screenW / 2, screenH / 2 + 60), 16, new LJ.Color(0.7, 0.7, 0.7),
+      1, new LJ.Color(0, 0, 0), 'center', 'monospace');
+    return;
+  }
+
+  // HP 条
+  const hpW = 200, hpH = 16, hpX = 16, hpY = 16;
+  drawRectScreen(vec2(hpX + hpW / 2, hpY + hpH / 2), vec2(hpW, hpH), COLORS.hpBg);
+  const hpR = Math.max(0, player.hp / player.maxHp);
+  drawRectScreen(vec2(hpX + hpW * hpR / 2, hpY + hpH / 2), vec2(hpW * hpR, hpH),
+    hpR > 0.3 ? COLORS.hp : new LJ.Color(0.9, 0.3, 0.3));
+  LJ.drawTextScreen(`HP ${Math.ceil(player.hp)}/${player.maxHp}`, vec2(hpX + 8, hpY + 2), 12,
+    new LJ.Color(1, 1, 1), 1, new LJ.Color(0, 0, 0), 'left', 'monospace', 'bold');
+
+  // 弹药
+  if (player.reloading) {
+    LJ.drawTextScreen('RELOADING...', vec2(16, 40), 16, new LJ.Color(1, 0.8, 0.2),
+      1, new LJ.Color(0, 0, 0), 'left', 'monospace', 'bold');
+    const rpW = 160;
+    drawRectScreen(vec2(16 + rpW / 2, 62), vec2(rpW, 4), COLORS.hpBg);
+    drawRectScreen(vec2(16 + rpW * player.reloadProgress / 2, 62),
+      vec2(rpW * player.reloadProgress, 4), new LJ.Color(0.5, 0.8, 1));
   } else {
-    game.scene.getScenes().forEach((s) => {
-      if (!s.scene.isActive()) return;
-      game.scene.resume(s);
-    });
-    applyManualLetterbox();
+    LJ.drawTextScreen(`弹药 ${player.ammo}/${player.maxAmmo}`, vec2(16, 40), 18,
+      new LJ.Color(1, 0.85, 0.1), 1, new LJ.Color(0, 0, 0), 'left', 'monospace', 'bold');
   }
-});
 
-document.addEventListener('gesturestart', (e) => e.preventDefault());
-document.addEventListener('dblclick', (e) => e.preventDefault());
+  // 得分 + 波次
+  LJ.drawTextScreen(`SCORE ${player.score}  KILLS ${player.kills}`,
+    vec2(screenW - 16, 16), 18, new LJ.Color(1, 1, 1),
+    1, new LJ.Color(0, 0, 0), 'right', 'monospace', 'bold');
+  LJ.drawTextScreen(`WAVE ${waveNum}  剩余 ${zombiesRemaining + zombies.length}`,
+    vec2(screenW - 16, 40), 14, COLORS.accent,
+    1, new LJ.Color(0, 0, 0), 'right', 'monospace', 'bold');
+
+  // 波次提示
+  if (waveTextTimer > 0) {
+    const alpha = waveTextTimer < 30 ? waveTextTimer / 30 : 1;
+    const c = new LJ.Color(1, 0.09, 0.27, alpha);
+    LJ.drawTextScreen(waveText, vec2(screenW / 2, screenH / 2 - 60), 36, c,
+      3, new LJ.Color(0, 0, 0, alpha), 'center', 'monospace', 'bold');
+  }
+
+  // 触屏按钮标签
+  if (LJ.isTouchDevice) {
+    const labels = ['射', '跳', '弹'];
+    const labelColors = [new LJ.Color(1, 1, 1), new LJ.Color(1, 1, 1), new LJ.Color(0.13, 0.13, 0.13)];
+    for (let i = 0; i < 3; i++) {
+      const bx = screenW - 60 - i * 65;
+      LJ.drawTextScreen(labels[i], vec2(bx, screenH - 55), 18, labelColors[i],
+        2, new LJ.Color(0, 0, 0, 0.5), 'center', 'monospace', 'bold');
+    }
+  }
+}
+
+function drawRectScreen(pos: Vector2, size: Vector2, color: Color): void {
+  LJ.drawRect(pos, size, color, 0, false, true);
+}
+
+// === 启动引擎 ===
+LJ.engineInit(
+  gameInit,
+  gameUpdate,
+  () => {},
+  gameRender,
+  gameRenderPost,
+  []
+);

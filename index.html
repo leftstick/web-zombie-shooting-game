@@ -1,102 +1,31 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-    />
-    <meta name="theme-color" content="#0a0a0a" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <title>BIOHAZARD · 生化危机 · 横版枪战</title>
-    <style>
-      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-      html, body {
-        margin: 0; padding: 0;
-        width: 100%; height: 100%;
-        background: #000;
-        overflow: hidden;
-        touch-action: none;
-        overscroll-behavior: none;
-        -webkit-user-select: none;
-        user-select: none;
-      }
-      /* game-root: 只做全屏黑色底板, 不控制 canvas */
-      #game-root {
-        position: fixed;
-        inset: 0;
-        width: 100vw;
-        height: 100vh;
-        height: 100dvh;
-        background: #000;
-        z-index: 1;
-        overflow: hidden;
-      }
-      /* canvas 的所有尺寸/定位由 main.ts 的 applyManualLetterbox() 控制 */
-      /* 这里只保留 pixelated 和最基础的 display */
-      canvas {
-        image-rendering: pixelated;
-        -webkit-touch-callout: none;
-      }
-      /* 竖屏旋转提示遮罩 */
-      #rotate-hint {
-        position: fixed;
-        inset: 0;
-        background: #000;
-        color: #fff;
-        z-index: 9999;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        gap: 28px;
-        padding: 24px;
-        opacity: 0; visibility: hidden; pointer-events: none;
-        transition: opacity 0.2s;
-      }
-      #rotate-hint.show { opacity: 1; visibility: visible; pointer-events: auto; }
-      #rotate-hint .icon { font-size: 80px; animation: rotateHint 2s ease-in-out infinite; }
-      #rotate-hint .title { font-size: 24px; font-weight: bold; letter-spacing: 2px; color: #ff1744; }
-      #rotate-hint .sub   { font-size: 14px; opacity: 0.7; }
-      #rotate-hint .confirm-btn {
-        margin-top: 20px;
-        padding: 14px 40px;
-        background: #ff1744;
-        color: #fff;
-        border: none;
-        border-radius: 6px;
-        font-size: 16px;
-        font-weight: bold;
-        letter-spacing: 2px;
-      }
-      @keyframes rotateHint { 0%,100%{transform:rotate(0)} 50%{transform:rotate(90deg)} }
-
-      /* 兜底: 竖屏强制显示提示, 横屏强制隐藏 */
-      @media (orientation: portrait) { #rotate-hint { opacity: 1; visibility: visible; pointer-events: auto; } }
-      @media (orientation: landscape) { #rotate-hint { opacity: 0; visibility: hidden; pointer-events: none; } }
-    </style>
-  </head>
-  <body>
-    <div id="game-root"></div>
-    <div id="rotate-hint">
-      <div class="icon">📱</div>
-      <div class="title">请旋转设备至横屏</div>
-      <div class="sub">本游戏必须在横屏模式下游玩</div>
-      <button class="confirm-btn" id="rotate-confirm">已转为横屏 · 继续</button>
-    </div>
-    <script type="module" src="/src/main.ts"></script>
-    <script>
-      // 按钮点击兜底: 横屏则隐藏提示, 否则提示用户先旋转
-      document.getElementById('rotate-confirm').addEventListener('click', () => {
-        const hint = document.getElementById('rotate-hint');
-        if (window.innerWidth > window.innerHeight) {
-          hint.classList.remove('show');
-        } else {
-          hint.querySelector('.sub').textContent = '请先旋转设备后再点击';
-        }
-      });
-    </script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>BIOHAZARD · 生化危机 · 横版枪战</title>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden;
+      touch-action: none;
+      overscroll-behavior: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    canvas {
+      image-rendering: pixelated;
+      -webkit-touch-callout: none;
+    }
+  </style>
+</head>
+<body>
+  <script type="module" src="/src/main.ts"></script>
+</body>
 </html>

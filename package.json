@@ -12,8 +12,7 @@
     "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
-    "phaser": "^3.80.1",
-    "ws": "^8.21.3"
+    "littlejsengine": "^1.18.29"
   },
   "devDependencies": {
     "typescript": "^5.4.5",
