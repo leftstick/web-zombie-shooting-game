@@ -1,21 +1,16 @@
 {
-  "name": "biohazard-side-scroller",
+  "name": "contra-hard-corps",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
-  "description": "生化危机主题横版过关枪战游戏 - 支持PC与移动端(横屏)",
+  "description": "MD版魂斗罗 铁血兵团 — 纯 Canvas 网页移植版，支持PC键盘与移动端触控",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
     "deploy": "bash scripts/deploy.sh"
   },
-  "dependencies": {
-    "littlejsengine": "^1.18.29"
-  },
   "devDependencies": {
-    "typescript": "^5.4.5",
     "vite": "^5.2.10"
   }
 }
