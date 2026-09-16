@@ -187,8 +187,11 @@ function startGame(): void {
 
   createObstacles();
 
-  // 创建玩家 (初始位置偏左, 给相机跟随留出空间)
+  // 创建玩家 (初始位置站在地面上)
   player = new Player(vec2(10, 0), selectedChar);
+  // 手动把玩家放到地面
+  player.pos.y = GROUND_LEVEL_Y + player.size.y / 2 + 0.01;
+  player.velocity.y = 0;
   showWaveText('WAVE 1');
 }
 
