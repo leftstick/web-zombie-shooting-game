@@ -2,8 +2,8 @@ import Phaser from 'phaser';
 import { COLORS, GAME_WIDTH, GAME_HEIGHT } from '../config/gameConfig';
 
 /**
- * PreloadScene — 加载所有外部素材 (sprites + tilesets + maps)
- * 使用相对路径 ./assets/ 兼容 GitHub Pages 项目页
+ * PreloadScene — 只加载角色/僵尸的外部精灵
+ * 所有障碍物 / 背景 / 粒子 / 子弹 / 拾取物 已在 BootScene 用 Graphics 程序化生成
  */
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -11,13 +11,15 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // === 角色精灵 (3 帧动画: f1=站立, f2=走1, f3=走2) ===
+    // === 角色精灵 (Leon / Claire / Ada) ===
     this.load.image('leon-f1', './assets/sprites/leon-f1.png');
     this.load.image('leon-f2', './assets/sprites/leon-f2.png');
     this.load.image('leon-f3', './assets/sprites/leon-f3.png');
+
     this.load.image('claire-f1', './assets/sprites/claire-f1.png');
     this.load.image('claire-f2', './assets/sprites/claire-f2.png');
     this.load.image('claire-f3', './assets/sprites/claire-f3.png');
+
     this.load.image('ada-f1', './assets/sprites/ada-f1.png');
     this.load.image('ada-f2', './assets/sprites/ada-f2.png');
     this.load.image('ada-f3', './assets/sprites/ada-f3.png');
@@ -27,11 +29,7 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('zombie-f2', './assets/sprites/zombie-f2.png');
     this.load.image('zombie-f3', './assets/sprites/zombie-f3.png');
 
-    // === 地图 tileset + Tiled JSON ===
-    this.load.image('game-tiles', './assets/tilesets/game-tiles.png');
-    this.load.tilemapTiledJSON('level1', './assets/maps/level1.json');
-
-    // === 进度条 ===
+    // === 加载进度条 ===
     const barW = 480;
     const barH = 24;
     const x = (GAME_WIDTH - barW) / 2;
@@ -54,13 +52,11 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   create(): void {
-    // 创建动画 (全局只创建一次)
     this.createAnimations();
     this.scene.start('MainMenuScene');
   }
 
   private createAnimations(): void {
-    // 玩家走路动画 (3帧循环)
     for (const char of ['leon', 'claire', 'ada']) {
       if (!this.anims.exists(`${char}-walk`)) {
         this.anims.create({
@@ -83,7 +79,6 @@ export class PreloadScene extends Phaser.Scene {
       }
     }
 
-    // 僵尸走路动画
     if (!this.anims.exists('zombie-walk')) {
       this.anims.create({
         key: 'zombie-walk',

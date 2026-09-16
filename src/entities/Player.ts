@@ -31,6 +31,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     firing: boolean;
     consumeJump: () => boolean;
     consumeReload: () => boolean;
+    consumeFire: () => boolean;
   };
 
   constructor(
@@ -124,10 +125,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.setVelocityY(-620);
     }
 
-    // ---- 射击 ----
+    // ---- 射击 (单次触发 — 每次点击/按下发射一发) ----
     if (this.fireCooldown > 0) this.fireCooldown -= delta;
 
-    if (this.inputRef.firing && !this.isReloading && this.fireCooldown <= 0) {
+    if (this.inputRef.consumeFire() && !this.isReloading && this.fireCooldown <= 0) {
       if (this.ammo > 0) {
         this.shoot();
       } else {

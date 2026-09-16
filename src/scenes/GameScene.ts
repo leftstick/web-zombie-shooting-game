@@ -13,6 +13,11 @@ import { Licker } from '../entities/Licker';
 
 interface GameSceneData { characterId: CharacterId; }
 
+/**
+ * GameScene — 横版枪战主场景
+ * 世界尺寸: 4096 x 720, 横向滚动
+ * 地面: 代码程序化生成 (不再依赖 Tiled)
+ */
 export class GameScene extends Phaser.Scene {
   private inputManager!: InputManager;
   private player!: Player;
@@ -20,7 +25,7 @@ export class GameScene extends Phaser.Scene {
   private zombies!: Phaser.Physics.Arcade.Group;
   private pickups!: Phaser.Physics.Arcade.Group;
   private obstacles!: Phaser.Physics.Arcade.Group;
-  private ground!: Phaser.Physics.Arcade.StaticGroup;
+  private platforms!: Phaser.Physics.Arcade.StaticGroup;
 
   private characterId!: CharacterId;
   private level = 1;
@@ -30,9 +35,17 @@ export class GameScene extends Phaser.Scene {
   private bossActive = false;
   private licker?: Licker;
 
+  // 视差背景 tileSprite
+  private bgFar?: Phaser.GameObjects.TileSprite;
+  private bgMid?: Phaser.GameObjects.TileSprite;
+  private bgNear?: Phaser.GameObjects.TileSprite;
+
   private playerInputState!: {
-    moveAxis: number; firing: boolean;
-    consumeJump: () => boolean; consumeReload: () => boolean;
+    moveAxis: number;
+    firing: boolean;
+    consumeJump: () => boolean;
+    consumeReload: () => boolean;
+    consumeFire: () => boolean;
   };
 
   // HUD
@@ -51,125 +64,249 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    const charConfig = getCharacter(this.characterId);
+    // === 物理世界边界 ===
+    this.physics.world.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
+    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
 
-    // === Tiled 地图 ===
-    const map = this.make.tilemap({ key: 'level1' });
-    const tileset = map.addTilesetImage('game-tiles', 'game-tiles')!;
-    const groundLayer = map.createLayer('ground', tileset, 0, 0)!;
-    groundLayer.setDepth(-5);
+    // === 视差背景 (3 层) ===
+    this.createParallaxBackground();
 
-    // 地图尺寸 → 世界边界
-    const mapW = groundLayer.width;
-    const mapH = groundLayer.height;
-    this.physics.world.setBounds(0, 0, mapW, GAME_HEIGHT);
-    this.cameras.main.setBounds(0, 0, mapW, GAME_HEIGHT);
+    // === 地面 + 平台 (代码程序化生成) ===
+    this.createGroundAndPlatforms();
 
-    // === 用 Tiled 瓦片创建碰撞体 ===
-    // tile id 1 (地面顶), 2 (地面主体), 3 (平台) → 都可碰撞
-    groundLayer.setCollision([1, 2, 3]);
+    // === 实体组 ===
+    this.bullets = this.physics.add.group({
+      classType: Bullet, defaultKey: 'bullet-trail', maxSize: 80, runChildUpdate: true,
+    });
+    this.zombies = this.physics.add.group({
+      classType: Zombie, maxSize: 50, runChildUpdate: true,
+    });
+    this.pickups = this.physics.add.group({
+      classType: Pickup, maxSize: 20,
+    });
+    this.obstacles = this.physics.add.group({
+      immovable: true, allowGravity: false,
+    });
+    this.platforms = this.physics.add.staticGroup();
 
-    // === 背景 ===
-    this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'city-bg')
-      .setScrollFactor(0.25).setDepth(-10);
-
-    // === 路面 ===
-    const road = this.add.tileSprite(0, mapH - 8, mapW, 20, 'road-strip');
-    road.setOrigin(0, 0.5).setDepth(2);
-
-    // 障碍物 (关卡设计)
-    this.obstacles = this.physics.add.group({ immovable: true, allowGravity: false });
+    // === 关卡障碍物布置 ===
     this.createLevelObstacles();
 
-    // 实体组
-    this.bullets = this.physics.add.group({ classType: Bullet, maxSize: 80, runChildUpdate: true });
-    this.zombies = this.physics.add.group({ classType: Zombie, maxSize: 50, runChildUpdate: true });
-    this.pickups = this.physics.add.group({ classType: Pickup, maxSize: 20 });
-
-    // 输入 + 玩家 (Y 坐标在地面上: mapH - 角色半高)
+    // === 输入 + 玩家 ===
     this.inputManager = new InputManager(this);
     this.playerInputState = {
-      moveAxis: 0, firing: false,
+      moveAxis: 0,
+      firing: false,
       consumeJump: () => this.inputManager.consumeJump(),
       consumeReload: () => this.inputManager.consumeReload(),
+      consumeFire: () => this.inputManager.consumeFire(),
     };
-    const playerY = mapH - 20; // 地面位置
-    this.player = new Player(this, 100, playerY - 100,
-      charConfig, this.bullets, this.playerInputState);
+    const charConfig = getCharacter(this.characterId);
+    // 地面顶的 Y 坐标 (玩家脚底站在这里)
+    const groundTopY = GAME_HEIGHT - GROUND_HEIGHT;
+    this.player = new Player(this, 120, groundTopY - 90, charConfig, this.bullets, this.playerInputState);
 
-    // 相机
+    // === 相机 ===
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-    this.cameras.main.setDeadzone(GAME_WIDTH * 0.35, GAME_HEIGHT);
+    this.cameras.main.setDeadzone(GAME_WIDTH * 0.3, GAME_HEIGHT * 0.5);
 
-    // 碰撞 (瓦片碰撞 + 障碍物)
-    this.physics.add.collider(this.player, groundLayer);
+    // === 碰撞 ===
+    this.physics.add.collider(this.player, this.platforms);
+    this.physics.add.collider(this.zombies, this.platforms);
     this.physics.add.collider(this.player, this.obstacles);
-    this.physics.add.collider(this.zombies, groundLayer);
     this.physics.add.collider(this.zombies, this.obstacles);
+
+    // 子弹 vs 僵尸 / 障碍物
     this.physics.add.overlap(this.bullets, this.zombies, this.onBulletZombie, undefined, this);
     this.physics.add.overlap(this.bullets, this.obstacles, this.onBulletObstacle, undefined, this);
+
+    // 玩家 vs 僵尸 / 拾取物
     this.physics.add.overlap(this.player, this.zombies, this.onPlayerZombie, undefined, this);
     this.physics.add.overlap(this.player, this.pickups, this.onPlayerPickup, undefined, this);
-    this.physics.add.overlap(this.player, this.bullets, (_, b: any) => {
+
+    // 僵尸子弹 vs 玩家 (预留)
+    this.physics.add.overlap(this.player, this.bullets, (_p: any, b: any) => {
       if (!b.fromPlayer) { this.player.takeDamage(b.damage); b.destroy(); }
     });
 
-    // 事件: 油桶爆炸 + Boss 舌头 + Boss 扑击
+    // === 事件 ===
     this.events.on('barrel-explode', this.onBarrelExplode, this);
     this.events.on('boss-tongue-hit', (dmg: number) => this.player.takeDamage(dmg));
 
+    // === HUD ===
     this.createHUD();
     this.startFirstWave();
   }
 
+  /* ============================================================
+   *  背景 / 地面 / 平台
+   * ============================================================ */
+
+  /** 3 层视差背景 — 用 TileSprite 横向滚动 */
+  private createParallaxBackground(): void {
+    // 最暗的远景层 — 几乎不动
+    this.bgFar = this.add.tileSprite(
+      WORLD_WIDTH / 2, GAME_HEIGHT - 240,
+      WORLD_WIDTH, 480, 'bg-far'
+    );
+    this.bgFar.setOrigin(0.5, 1);
+    this.bgFar.setScrollFactor(0.08);
+    this.bgFar.setDepth(-20);
+
+    // 中景 — 慢速移动
+    this.bgMid = this.add.tileSprite(
+      WORLD_WIDTH / 2, GAME_HEIGHT - 170,
+      WORLD_WIDTH, 340, 'bg-mid'
+    );
+    this.bgMid.setOrigin(0.5, 1);
+    this.bgMid.setScrollFactor(0.25);
+    this.bgMid.setDepth(-18);
+
+    // 近景建筑 — 较快移动
+    this.bgNear = this.add.tileSprite(
+      WORLD_WIDTH / 2, GAME_HEIGHT - 100,
+      WORLD_WIDTH, 240, 'bg-near'
+    );
+    this.bgNear.setOrigin(0.5, 1);
+    this.bgNear.setScrollFactor(0.5);
+    this.bgNear.setDepth(-16);
+
+    // 天空背景 (纯暗色渐变 — 用 Graphics 画一块大矩形)
+    const sky = this.add.graphics();
+    sky.fillStyle(0x0a0a12, 1);
+    sky.fillRect(0, 0, WORLD_WIDTH, GAME_HEIGHT);
+    sky.setScrollFactor(0); // 固定不动
+    sky.setDepth(-30);
+  }
+
+  /**
+   * 程序化生成地面 + 浮空平台
+   * - 地面: 底部 GROUND_HEIGHT 像素高
+   * - 上面再盖一层 road-strip tileSprite 做路面装饰
+   * - 浮空平台: 在不同高度放几块可站立的平台
+   */
+  private createGroundAndPlatforms(): void {
+    // === 主地面 (纯色块, 碰撞体) ===
+    const groundTop = GAME_HEIGHT - GROUND_HEIGHT; // = 600
+    const groundColor = 0x14141a;
+    const groundRect = this.add.rectangle(
+      WORLD_WIDTH / 2, groundTop + GROUND_HEIGHT / 2,
+      WORLD_WIDTH, GROUND_HEIGHT, groundColor
+    );
+    groundRect.setOrigin(0.5, 0.5);
+    groundRect.setDepth(-5);
+    this.physics.add.existing(groundRect, true); // static body, 自带 allowGravity=false
+    this.platforms.add(groundRect);
+
+    // === 路面装饰层 (road-strip tileSprite) — 盖在地面顶部 ===
+    const roadTop = this.add.tileSprite(
+      0, groundTop, WORLD_WIDTH, 40, 'road-strip'
+    );
+    roadTop.setOrigin(0, 0.5);
+    roadTop.setScrollFactor(1);
+    roadTop.setDepth(-4);
+
+    // === 路面底下的更暗色 ===
+    const roadEdge = this.add.rectangle(
+      0, groundTop, WORLD_WIDTH, 4, 0xffc107, 0.45
+    );
+    roadEdge.setOrigin(0, 0.5);
+    roadEdge.setDepth(-3);
+
+    // === 浮空平台 — 用 StaticGroup 统一管理 ===
+    const platSpecs: { x: number; y: number; w: number }[] = [
+      { x: 600,  y: groundTop - 150, w: 140 },  // 平台 1
+      { x: 1350, y: groundTop - 180, w: 180 },  // 平台 2 (上层)
+      { x: 2100, y: groundTop - 120, w: 160 },  // 平台 3
+      { x: 2900, y: groundTop - 200, w: 200 },  // 平台 4
+      { x: 3600, y: groundTop - 140, w: 160 },  // 平台 5 (Boss 前)
+    ];
+    for (const p of platSpecs) {
+      this.createPlatform(p.x, p.y, p.w);
+    }
+  }
+
+  private createPlatform(cx: number, cy: number, w: number): void {
+    const h = 16;
+    // 用 Graphics 画一块平台纹理
+    const g = this.add.graphics();
+    g.fillStyle(0x2a2a32, 1);
+    g.fillRect(0, 0, w, h);
+    g.fillStyle(0x3a3a44, 1);
+    g.fillRect(0, 0, w, 3); // 顶部亮线
+    g.fillStyle(0x0e0e14, 1);
+    g.fillRect(0, h - 2, w, 2); // 底部暗线
+    const key = `plat-${cx}`;
+    g.generateTexture(key, w, h);
+    g.destroy();
+
+    const plat = this.add.rectangle(cx, cy, w, h, 0x2a2a32);
+    plat.setOrigin(0.5, 0.5);
+    plat.setDepth(-3);
+    this.physics.add.existing(plat, true);
+    this.platforms.add(plat);
+  }
+
+  /* ============================================================
+   *  障碍物 (关卡布置)
+   * ============================================================ */
+
   /** 浣熊市关卡布置 — 车辆/集装箱/油桶散布 */
   private createLevelObstacles(): void {
-    const floorY = GAME_HEIGHT - GROUND_HEIGHT;
+    const groundTop = GAME_HEIGHT - GROUND_HEIGHT; // 600
     const obs: { x: number; type: ObstacleType }[] = [
       { x: 500,  type: 'barrel' },
       { x: 700,  type: 'car-red' },
       { x: 1050, type: 'barrel' },
       { x: 1200, type: 'cone' },
-      { x: 1400, type: 'container' },  // 大集装箱挡路, 可站顶
+      { x: 1400, type: 'container' },
       { x: 1800, type: 'car-blue' },
       { x: 2050, type: 'barrel' },
       { x: 2200, type: 'barrel' },
       { x: 2450, type: 'container' },
       { x: 2850, type: 'car-red' },
       { x: 3100, type: 'car-blue' },
-      { x: 3400, type: 'container' },  // Boss 战之前的最后一道障碍
+      { x: 3400, type: 'container' },
       { x: 3800, type: 'barrel' },
     ];
     obs.forEach((o) => {
       const h = this.obstacleHeight(o.type);
       const w = this.obstacleWidth(o.type);
-      const y = floorY - h / 2;
+      const y = groundTop - h / 2;
       const obsObj = new Obstacle(this, o.x, y, o.type);
       this.obstacles.add(obsObj);
-      // 强制 immovable (StaticGroup 已自动)
+      // 修正碰撞体大小 (Obstacle 构造函数已做了 setImmovable, 这里确保加入组)
+      const body = obsObj.body as Phaser.Physics.Arcade.Body;
+      if (body) {
+        body.setSize(w - 6, h - 4);
+        body.setOffset(3, 2);
+      }
     });
   }
 
   private obstacleHeight(t: ObstacleType): number {
     switch (t) {
-      case 'container': return 60;
+      case 'container': return 90;
       case 'car-red':
-      case 'car-blue': return 36;
-      case 'barrel': return 30;
-      case 'cone': return 12;
+      case 'car-blue': return 48;
+      case 'barrel': return 36;
+      case 'cone': return 20;
     }
   }
   private obstacleWidth(t: ObstacleType): number {
     switch (t) {
-      case 'container': return 72;
+      case 'container': return 96;
       case 'car-red':
       case 'car-blue': return 72;
       case 'barrel': return 24;
-      case 'cone': return 18;
+      case 'cone': return 24;
     }
   }
 
-  /* ---- 波次 ---- */
+  /* ============================================================
+   *  波次管理
+   * ============================================================ */
+
   private startFirstWave(): void {
     this.waveNum = 1;
     this.bossActive = false;
@@ -178,27 +315,25 @@ export class GameScene extends Phaser.Scene {
     this.waveText.setText(`WAVE ${this.waveNum}  剩余 ${this.zombiesRemaining}`);
   }
 
-  /** 最终一波: Boss 登场 */
   private startBossWave(): void {
     this.waveNum++;
     this.bossActive = true;
     this.zombiesRemaining = 0;
     this.waveText.setText('⚠ LICKER 出没 ⚠');
 
+    const groundTop = GAME_HEIGHT - GROUND_HEIGHT;
     const bossX = 3700;
-    this.licker = new Licker(this, bossX, GAME_HEIGHT - GROUND_HEIGHT - 40);
+    this.licker = new Licker(this, bossX, groundTop - 40);
     this.licker.setPlayer(this.player);
-    // Boss 与玩家/障碍物碰撞
-    this.physics.add.collider(this.licker, this.ground);
+    this.physics.add.collider(this.licker, this.platforms);
     this.physics.add.collider(this.licker, this.obstacles);
     this.physics.add.overlap(this.player, this.licker, (_p, b: any) => {
       if (b && b.attackDmg !== undefined) this.player.takeDamage(b.attackDmg);
     });
-    this.physics.add.overlap(this.bullets, this.licker, (_bu, b: any) => {
-      if (b && b.hp !== undefined) { b.takeDamage((_bu as Bullet).damage); (_bu as Bullet).destroy(); }
+    this.physics.add.overlap(this.bullets, this.licker, (bu: any, b: any) => {
+      if (b && b.hp !== undefined) { b.takeDamage((bu as Bullet).damage); (bu as Bullet).destroy(); }
     });
 
-    // Boss 阶段/击败事件
     this.events.on('boss-phase', (phase: number) => {
       this.waveText.setText(`LICKER 进入第 ${phase} 阶段!`);
       this.add.tween({ targets: this.waveText, alpha: 0.5, duration: 500, yoyo: true, repeat: 2 });
@@ -220,23 +355,20 @@ export class GameScene extends Phaser.Scene {
         });
       });
     });
-
     this.cameras.main.shake(600, 0.015);
   }
 
   private spawnZombie(): void {
-    // 从 camera 视野外侧出生, 给玩家反应时间
     const cam = this.cameras.main;
-    const viewLeft = cam.scrollX - 80;
-    const viewRight = cam.scrollX + GAME_WIDTH + 80;
+    const viewLeft = cam.scrollX - 100;
+    const viewRight = cam.scrollX + GAME_WIDTH + 100;
 
-    // 随机选择一侧出生
     const side = Math.random() < 0.5 ? 'left' : 'right';
     let spawnX = side === 'left'
       ? Math.max(viewLeft, 80)
       : Math.min(viewRight, WORLD_WIDTH - 80);
 
-    // 保险: 距离玩家至少 400px
+    // 距离玩家至少 400px
     const dist = spawnX - this.player.x;
     if (Math.abs(dist) < 400) {
       spawnX = spawnX < this.player.x
@@ -245,7 +377,8 @@ export class GameScene extends Phaser.Scene {
       spawnX = Math.max(80, Math.min(WORLD_WIDTH - 80, spawnX));
     }
 
-    const spawnY = GAME_HEIGHT - GROUND_HEIGHT - 30;
+    const groundTop = GAME_HEIGHT - GROUND_HEIGHT;
+    const spawnY = groundTop - 30;
     const r = Math.random();
     let type: ZombieType = 'normal';
     if (this.waveNum >= 4 && r < 0.25) type = 'tank';
@@ -255,13 +388,10 @@ export class GameScene extends Phaser.Scene {
     this.zombies.add(z);
   }
 
-  private spawnTimerFire(): void {
-    this.spawnZombie();
-    this.zombiesRemaining--;
-    this.waveText.setText(`WAVE ${this.waveNum}  剩余 ${this.zombiesRemaining}`);
-  }
+  /* ============================================================
+   *  碰撞回调
+   * ============================================================ */
 
-  /* ---- 碰撞回调 ---- */
   private onBulletZombie(_bu: any, zo: any): void {
     const b = _bu as Bullet, z = zo as Zombie;
     if (!b.active || !z.active || !b.fromPlayer) return;
@@ -272,7 +402,8 @@ export class GameScene extends Phaser.Scene {
       this.player.kills++;
       if (Math.random() < 0.2) {
         const type = Math.random() < 0.5 ? 'health' : 'ammo';
-        const p = new Pickup(this, z.x, z.y, type);
+        const groundTop = GAME_HEIGHT - GROUND_HEIGHT;
+        const p = new Pickup(this, z.x, groundTop - 30, type);
         this.pickups.add(p);
       }
     }
@@ -284,7 +415,7 @@ export class GameScene extends Phaser.Scene {
     o.takeDamage(b.damage);
     b.destroy();
     // 弹壳火花
-    this.add.particles(b.x, b.y, 'blood-particle', {
+    this.add.particles(b.x, b.y, 'spark-particle', {
       speed: { min: 20, max: 80 }, lifespan: 200, quantity: 3,
       scale: { start: 0.8, end: 0 }, emitting: false,
     }).explode(3);
@@ -310,7 +441,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onBarrelExplode(x: number, y: number, radius: number): void {
-    // 范围伤害: 玩家 & 附近僵尸
     const R = 120;
     if (this.player.active && Math.hypot(this.player.x - x, this.player.y - y) < R) {
       this.player.takeDamage(radius * 0.4);
@@ -323,18 +453,20 @@ export class GameScene extends Phaser.Scene {
       }
       return true;
     });
-    // 附近油桶连锁引爆
     this.obstacles.children.iterate((o) => {
       const oo = o as Obstacle;
       if (!oo || !oo.active) return true;
       if (oo.type === 'barrel' && Math.hypot(oo.x - x, oo.y - y) < R) {
-        oo.takeDamage(999); // 连锁爆
+        oo.takeDamage(999);
       }
       return true;
     });
   }
 
-  /* ---- HUD ---- */
+  /* ============================================================
+   *  HUD
+   * ============================================================ */
+
   private createHUD(): void {
     const m = 20;
     const w = 260;
@@ -373,43 +505,39 @@ export class GameScene extends Phaser.Scene {
     this.scoreText.setText(`SCORE ${this.player.score}  KILLS ${this.player.kills}`);
   }
 
-  /* ---- 主循环 ---- */
+  /* ============================================================
+   *  主循环
+   * ============================================================ */
+
   update(time: number, delta: number): void {
     this.inputManager.update();
     this.playerInputState.moveAxis = this.inputManager.moveAxis;
     this.playerInputState.firing = this.inputManager.firing;
     this.player.update(time, delta);
 
-    // 僵尸 + Boss + 障碍物 更新
-    this.zombies.children.iterate((z) => {
-      const zz = z as Zombie;
-      if (zz && zz.active) zz.update(time, delta);
-      return true;
-    });
-    this.obstacles.children.iterate((o) => {
-      const oo = o as Obstacle;
-      if (oo && oo.active) oo.update(time, delta);
-      return true;
-    });
+    // 僵尸 / 障碍 / Boss
+    this.zombies.children.iterate((z) => { const zz = z as Zombie; if (zz && zz.active) zz.update(time, delta); return true; });
+    this.obstacles.children.iterate((o) => { const oo = o as Obstacle; if (oo && oo.active) oo.update(time, delta); return true; });
     if (this.licker && this.licker.active) this.licker.update(time, delta);
 
-    // 僵尸子弹出界销毁
+    // 子弹出界销毁
     this.bullets.children.iterate((b) => {
       const bb = b as Bullet;
       if (bb && bb.active && (bb.x < -50 || bb.x > WORLD_WIDTH + 50)) bb.destroy();
       return true;
     });
 
-    // 生成逻辑
+    // 波次生成
     if (!this.bossActive && this.zombiesRemaining > 0) {
       this.spawnTimer -= delta;
       if (this.spawnTimer <= 0) {
-        this.spawnTimerFire();
+        this.spawnZombie();
+        this.zombiesRemaining--;
+        this.waveText.setText(`WAVE ${this.waveNum}  剩余 ${this.zombiesRemaining}`);
         this.spawnTimer = 1200 - this.waveNum * 100;
       }
     } else if (!this.bossActive && this.zombiesRemaining <= 0 &&
                this.zombies.countActive(true) === 0) {
-      // 切换下一波 / Boss
       if (this.waveNum < 3) {
         this.waveNum++;
         this.zombiesRemaining = 5 + this.waveNum * 2;
@@ -422,6 +550,12 @@ export class GameScene extends Phaser.Scene {
 
     // 掉出世界
     if (this.player.y > GAME_HEIGHT + 100) this.triggerGameOver();
+
+    // 视差背景随相机滚动做 tileOffset (额外的微滚动效果)
+    const camScrollX = this.cameras.main.scrollX;
+    if (this.bgFar) this.bgFar.tilePositionX = camScrollX * 0.08;
+    if (this.bgMid) this.bgMid.tilePositionX = camScrollX * 0.25;
+    if (this.bgNear) this.bgNear.tilePositionX = camScrollX * 0.5;
 
     this.updateHUD();
   }

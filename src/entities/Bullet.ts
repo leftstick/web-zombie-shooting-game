@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 
 /**
- * 子弹实体
+ * 子弹实体 — 使用 bullet-trail 素材 (横向发光子弹带拖尾)
  */
 export class Bullet extends Phaser.Physics.Arcade.Sprite {
   public damage = 20;
@@ -12,7 +12,9 @@ export class Bullet extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(50);
-    this.body!.setSize(16, 4);
+    // bullet-trail 是横向 256x16, 碰撞体取头部区域
+    this.body!.setSize(24, 8);
+    this.body!.setOffset(8, 4);
   }
 
   /**
