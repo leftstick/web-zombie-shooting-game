@@ -280,8 +280,10 @@ export class GameScene extends Phaser.Scene {
       const w = this.obstacleWidth(o.type);
       const y = groundTop - h / 2;
       const obsObj = new Obstacle(this, o.x, y, o.type);
+      // 关键: 纹理只有 16x10 / 24x12 像素, 需要缩放到逻辑尺寸
+      obsObj.setDisplaySize(w, h);
       this.obstacles.add(obsObj);
-      // 修正碰撞体大小 (Obstacle 构造函数已做了 setImmovable, 这里确保加入组)
+      // 碰撞体也要精确匹配
       const body = obsObj.body as Phaser.Physics.Arcade.Body;
       if (body) {
         body.setSize(w - 6, h - 4);

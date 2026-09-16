@@ -83,7 +83,9 @@ export class InputManager implements InputSnapshot {
     const ua = navigator.userAgent;
     const isTouch = 'ontouchstart' in window && navigator.maxTouchPoints > 0;
     const isUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-    return isTouch || isUA;
+    const result = isTouch || isUA;
+    console.log(`[InputManager] detectMobile: isTouch=${isTouch}, isUA=${isUA}("${ua.substring(0, 60)}"), maxTouch=${navigator.maxTouchPoints} → ${result}`);
+    return result;
   }
 
   private setupKeyboard(): void {
@@ -266,12 +268,11 @@ export class InputManager implements InputSnapshot {
       state.active = true;
       state.pointerId = pointer.id;
       state.pressedThisFrame = true;
-      // 按压反馈: 缩小 + 加深 + 边框加粗 + 震动
+      console.log(`[InputManager] ${type} pointerdown! world=(${pointer.worldX.toFixed(0)},${pointer.worldY.toFixed(0)}) btn=(${btn.x.toFixed(0)},${btn.y.toFixed(0)})`);
       btn.setScale(0.85);
       (btn as any).setFillStyle?.((btn as any)._baseFill, 0.9);
       btn.setStrokeStyle(4, (btn as any)._baseFill, 1.0);
       if (navigator.vibrate) navigator.vibrate(20);
-
       if (type === 'fire') this.firing = true;
       if (type === 'jump') this.jumpPressed = true;
       if (type === 'reload') this.reloadPressed = true;
@@ -281,12 +282,10 @@ export class InputManager implements InputSnapshot {
       state.active = false;
       state.pointerId = -1;
       state.pressedThisFrame = false;
-      // 回弹
+      console.log(`[InputManager] ${type} pointerup!`);
       btn.setScale(1);
       (btn as any).setFillStyle?.((btn as any)._baseFill, 0.45);
       btn.setStrokeStyle(3, (btn as any)._baseFill, 0.9);
-
-      // 松开后所有按钮状态都复位 (tap 模式)
       if (type === 'fire') this.firing = false;
     };
     btn.on('pointerdown', onDown);
