@@ -38,8 +38,11 @@ export class CharacterSelectScene extends Phaser.Scene {
       this.cards.push(card);
     });
 
-    // 确认按钮
-    const confirmBtn = this.createButton(GAME_WIDTH / 2, 620, '确认出战', () => {
+    // 确认按钮 — 用一次性防重入标志, 避免 bg.pointerup 和 container.pointertap 同时命中
+    let confirming = false;
+    const onConfirm = () => {
+      if (confirming) { console.log('[CharacterSelect] 防重入跳过'); return; }
+      confirming = true;
       console.log('[CharacterSelect] 确认出战被点击! selectedIndex=', this.selectedIndex);
       const char = CHARACTER_LIST[this.selectedIndex];
       localStorage.setItem(STORAGE_KEYS.selectedCharacter, char.id);
@@ -47,8 +50,20 @@ export class CharacterSelectScene extends Phaser.Scene {
       try {
         this.scene.start('GameScene', { characterId: char.id });
       } catch (err) {
+        confirming = false; // 异常时允许重试
         console.error('[CharacterSelect] scene.start 异常:', err);
       }
+    };
+    const confirmBtn = this.createButton(GAME_WIDTH / 2, 620, '确认出战', onConfirm);
+    // 同时在 confirmBtn 容器上加 pointertap 作为双保险 (Phaser pointertap 自动处理 down+up)
+    confirmBtn.setSize(240, 56);
+    confirmBtn.setInteractive(
+      new Phaser.Geom.Rectangle(-120, -28, 240, 56),
+      Phaser.Geom.Rectangle.Contains
+    );
+    confirmBtn.on('pointertap', () => {
+      console.log('[CharacterSelect] pointertap 触发, 双保险!');
+      onConfirm();
     });
 
     // 键盘快捷
