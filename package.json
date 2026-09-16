@@ -12,7 +12,8 @@
     "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
-    "phaser": "^3.80.1"
+    "phaser": "^3.80.1",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "typescript": "^5.4.5",

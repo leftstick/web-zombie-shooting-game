@@ -73,10 +73,7 @@ export class GameScene extends Phaser.Scene {
     // === 视差背景 (3 层) ===
     this.createParallaxBackground();
 
-    // === 地面 + 平台 (代码程序化生成) ===
-    this.createGroundAndPlatforms();
-
-    // === 实体组 ===
+    // === 实体组 (必须在 createGroundAndPlatforms 之前初始化!) ===
     this.bullets = this.physics.add.group({
       classType: Bullet, defaultKey: 'bullet-trail', maxSize: 80, runChildUpdate: true,
     });
@@ -90,6 +87,9 @@ export class GameScene extends Phaser.Scene {
       immovable: true, allowGravity: false,
     });
     this.platforms = this.physics.add.staticGroup();
+
+    // === 地面 + 平台 (依赖 this.platforms) ===
+    this.createGroundAndPlatforms();
 
     // === 关卡障碍物布置 ===
     this.createLevelObstacles();
@@ -140,11 +140,13 @@ export class GameScene extends Phaser.Scene {
     this.startFirstWave();
     console.log('[GameScene] create() 完成!');
     } catch (err) {
-      console.error('[GameScene] create() 崩溃:', err);
+      const errMsg = err instanceof Error ? err.message + '\n' + (err.stack || '') : JSON.stringify(err);
+      console.error('[GameScene] create() 崩溃:', errMsg);
       this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2,
-        `场景加载失败:\n${err instanceof Error ? err.message : String(err)}`,
-        { fontSize: '20px', color: '#ff1744', align: 'center' }
+        `场景加载失败:\n${errMsg}`,
+        { fontSize: '16px', color: '#ff1744', align: 'center', wordWrap: { width: GAME_WIDTH - 40 } }
       ).setOrigin(0.5).setScrollFactor(0);
+      this.scene.pause();
     }
   }
 
@@ -514,6 +516,8 @@ export class GameScene extends Phaser.Scene {
    * ============================================================ */
 
   update(time: number, delta: number): void {
+    // 安全检查: 如果 create 崩溃了, 不执行 update
+    if (!this.player || !this.inputManager) return;
     this.inputManager.update();
     this.playerInputState.moveAxis = this.inputManager.moveAxis;
     this.playerInputState.firing = this.inputManager.firing;
