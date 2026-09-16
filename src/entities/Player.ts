@@ -190,7 +190,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       if (bullet) {
         bullet.setActive(true);
         bullet.setVisible(true);
-        bullet.body!.enable = true;
         bullet.fire(vx, vy, w.damage, true);
       }
     }

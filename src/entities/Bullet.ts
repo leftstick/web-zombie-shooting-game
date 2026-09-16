@@ -1,7 +1,10 @@
 import Phaser from 'phaser';
 
 /**
- * 子弹实体 — 使用 bullet-trail 素材 (横向发光子弹带拖尾)
+ * 子弹实体 — 从 Arcade.Sprite 继承
+ * 注意: 父类 Phaser.Physics.Arcade.Sprite 的构造函数已经调用了
+ *       scene.add.existing(this) + scene.physics.add.existing(this),
+ *       不要再重复调用, 否则会在 body.enable=true 时触发 allowGravity 重置
  */
 export class Bullet extends Phaser.Physics.Arcade.Sprite {
   public damage = 20;
@@ -9,12 +12,12 @@ export class Bullet extends Phaser.Physics.Arcade.Sprite {
 
   constructor(scene: Phaser.Scene, x: number, y: number, texture: string) {
     super(scene, x, y, texture);
-    scene.add.existing(this);
-    scene.physics.add.existing(this);
     this.setDepth(50);
-    // bullet-trail 是横向 256x16, 碰撞体取头部区域
-    this.body!.setSize(24, 8);
-    this.body!.setOffset(8, 4);
+    // 子弹不受重力影响, 水平飞出屏幕
+    const b = this.body as Phaser.Physics.Arcade.Body;
+    b.setAllowGravity(false);
+    b.setSize(24, 8);
+    b.setOffset(8, 4);
   }
 
   /**
@@ -27,6 +30,16 @@ export class Bullet extends Phaser.Physics.Arcade.Sprite {
   public fire(vx: number, vy: number, damage: number, fromPlayer = true): void {
     this.damage = damage;
     this.fromPlayer = fromPlayer;
+
+    // 关键: 对象池复用时 body.enable 会被重新打开, Phaser 会强制设 allowGravity=true
+    // 所以每次 fire 必须重新关闭重力
+    const b = this.body as Phaser.Physics.Arcade.Body | undefined;
+    if (b) {
+      b.setAllowGravity(false);
+      b.setSize(24, 8);
+      b.setOffset(8, 4);
+    }
+
     this.setVelocity(vx, vy);
     // 根据方向翻转
     this.setFlipX(vx < 0);
