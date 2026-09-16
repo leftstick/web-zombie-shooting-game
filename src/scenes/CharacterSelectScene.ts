@@ -40,9 +40,15 @@ export class CharacterSelectScene extends Phaser.Scene {
 
     // 确认按钮
     const confirmBtn = this.createButton(GAME_WIDTH / 2, 620, '确认出战', () => {
+      console.log('[CharacterSelect] 确认出战被点击! selectedIndex=', this.selectedIndex);
       const char = CHARACTER_LIST[this.selectedIndex];
       localStorage.setItem(STORAGE_KEYS.selectedCharacter, char.id);
-      this.scene.start('GameScene', { characterId: char.id });
+      console.log('[CharacterSelect] 即将 start GameScene, char=', char.id);
+      try {
+        this.scene.start('GameScene', { characterId: char.id });
+      } catch (err) {
+        console.error('[CharacterSelect] scene.start 异常:', err);
+      }
     });
 
     // 键盘快捷

@@ -64,6 +64,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    console.log('[GameScene] create() 开始...');
+    try {
     // === 物理世界边界 ===
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
@@ -136,6 +138,14 @@ export class GameScene extends Phaser.Scene {
     // === HUD ===
     this.createHUD();
     this.startFirstWave();
+    console.log('[GameScene] create() 完成!');
+    } catch (err) {
+      console.error('[GameScene] create() 崩溃:', err);
+      this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2,
+        `场景加载失败:\n${err instanceof Error ? err.message : String(err)}`,
+        { fontSize: '20px', color: '#ff1744', align: 'center' }
+      ).setOrigin(0.5).setScrollFactor(0);
+    }
   }
 
   /* ============================================================
@@ -181,70 +191,64 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * 程序化生成地面 + 浮空平台
-   * - 地面: 底部 GROUND_HEIGHT 像素高
-   * - 上面再盖一层 road-strip tileSprite 做路面装饰
-   * - 浮空平台: 在不同高度放几块可站立的平台
+   * - 地面碰撞体: 用 StaticGroup.create('pixel') 生成 (BootScene 生成的 1x1 占位纹理)
+   * - 视觉层: 独立的 rectangle / tileSprite 盖在碰撞体上方
+   * - 浮空平台: 同理
    */
   private createGroundAndPlatforms(): void {
-    // === 主地面 (纯色块, 碰撞体) ===
     const groundTop = GAME_HEIGHT - GROUND_HEIGHT; // = 600
-    const groundColor = 0x14141a;
-    const groundRect = this.add.rectangle(
-      WORLD_WIDTH / 2, groundTop + GROUND_HEIGHT / 2,
-      WORLD_WIDTH, GROUND_HEIGHT, groundColor
-    );
-    groundRect.setOrigin(0.5, 0.5);
-    groundRect.setDepth(-5);
-    this.physics.add.existing(groundRect, true); // static body, 自带 allowGravity=false
-    this.platforms.add(groundRect);
+
+    // === 主地面碰撞体 (StaticGroup.create 自动生成 static body) ===
+    // 用 BootScene 里生成的 1x1 占位纹理 'pixel'
+    const groundBody = this.platforms.create(
+      WORLD_WIDTH / 2, groundTop + GROUND_HEIGHT / 2, 'pixel'
+    ) as Phaser.Physics.Arcade.Image;
+    groundBody.setDisplaySize(WORLD_WIDTH, GROUND_HEIGHT);
+    groundBody.setOrigin(0.5, 0.5);
+    groundBody.setDepth(-6);
+    groundBody.setTint(0x14141a); // 用 tint 给一个深色底
+    groundBody.body!.setSize(WORLD_WIDTH, GROUND_HEIGHT); // 精确碰撞体尺寸
 
     // === 路面装饰层 (road-strip tileSprite) — 盖在地面顶部 ===
     const roadTop = this.add.tileSprite(
       0, groundTop, WORLD_WIDTH, 40, 'road-strip'
     );
     roadTop.setOrigin(0, 0.5);
-    roadTop.setScrollFactor(1);
     roadTop.setDepth(-4);
 
-    // === 路面底下的更暗色 ===
+    // === 路面黄色边缘线 ===
     const roadEdge = this.add.rectangle(
       0, groundTop, WORLD_WIDTH, 4, 0xffc107, 0.45
     );
     roadEdge.setOrigin(0, 0.5);
     roadEdge.setDepth(-3);
 
-    // === 浮空平台 — 用 StaticGroup 统一管理 ===
+    // === 浮空平台 — 用同样的 StaticGroup.create('pixel') 方式 ===
     const platSpecs: { x: number; y: number; w: number }[] = [
-      { x: 600,  y: groundTop - 150, w: 140 },  // 平台 1
-      { x: 1350, y: groundTop - 180, w: 180 },  // 平台 2 (上层)
-      { x: 2100, y: groundTop - 120, w: 160 },  // 平台 3
-      { x: 2900, y: groundTop - 200, w: 200 },  // 平台 4
-      { x: 3600, y: groundTop - 140, w: 160 },  // 平台 5 (Boss 前)
+      { x: 600,  y: groundTop - 150, w: 140 },
+      { x: 1350, y: groundTop - 180, w: 180 },
+      { x: 2100, y: groundTop - 120, w: 160 },
+      { x: 2900, y: groundTop - 200, w: 200 },
+      { x: 3600, y: groundTop - 140, w: 160 },
     ];
     for (const p of platSpecs) {
-      this.createPlatform(p.x, p.y, p.w);
+      this.createPlatformBody(p.x, p.y, p.w);
     }
   }
 
-  private createPlatform(cx: number, cy: number, w: number): void {
+  private createPlatformBody(cx: number, cy: number, w: number): void {
     const h = 16;
-    // 用 Graphics 画一块平台纹理
-    const g = this.add.graphics();
-    g.fillStyle(0x2a2a32, 1);
-    g.fillRect(0, 0, w, h);
-    g.fillStyle(0x3a3a44, 1);
-    g.fillRect(0, 0, w, 3); // 顶部亮线
-    g.fillStyle(0x0e0e14, 1);
-    g.fillRect(0, h - 2, w, 2); // 底部暗线
-    const key = `plat-${cx}`;
-    g.generateTexture(key, w, h);
-    g.destroy();
-
-    const plat = this.add.rectangle(cx, cy, w, h, 0x2a2a32);
+    // 碰撞体
+    const plat = this.platforms.create(cx, cy, 'pixel') as Phaser.Physics.Arcade.Image;
+    plat.setDisplaySize(w, h);
     plat.setOrigin(0.5, 0.5);
-    plat.setDepth(-3);
-    this.physics.add.existing(plat, true);
-    this.platforms.add(plat);
+    plat.setDepth(-5);
+    plat.setTint(0x2a2a32);
+    plat.body!.setSize(w, h);
+
+    // 顶部亮线 (视觉装饰)
+    const topLine = this.add.rectangle(cx, cy - h / 2 + 1, w, 2, 0x3a3a44);
+    topLine.setDepth(-4);
   }
 
   /* ============================================================

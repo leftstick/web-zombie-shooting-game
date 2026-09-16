@@ -422,8 +422,18 @@ export function makeBulletTexture(scene: Phaser.Scene): void {
   g.destroy();
 }
 
+/** 1x1 透明像素 — StaticGroup.create 等需要占位纹理时用 */
+export function makePixelPlaceholder(scene: Phaser.Scene): void {
+  const g = scene.add.graphics();
+  g.fillStyle(0xffffff, 1);
+  g.fillRect(0, 0, 1, 1);
+  g.generateTexture('pixel', 1, 1);
+  g.destroy();
+}
+
 /** 汇总 */
 export function generateAllPixelArt(scene: Phaser.Scene): void {
+  makePixelPlaceholder(scene);  // 必须最先 — 其他代码可能依赖 'pixel'
   makeLickerTexture(scene);
   makeObstacles(scene);
   makeParticlesAndBullets(scene);
