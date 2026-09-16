@@ -123,9 +123,10 @@ export class CharacterSelectScene extends Phaser.Scene {
       ...dmgBar,
       desc,
     ]);
-    // 用 bg 自带的 setInteractive(), 不用 Container 自定义 hitarea
-    bg.setInteractive();
-    bg.on('pointerdown', () => {
+    // 用 zone 做卡片点击区域
+    const cardZone = this.add.zone(x, y, w, h);
+    cardZone.setInteractive();
+    cardZone.on('pointerdown', () => {
       this.selectedIndex = idx;
       this.refreshSelection();
     });
@@ -160,7 +161,6 @@ export class CharacterSelectScene extends Phaser.Scene {
     const h = 56;
     const bg = this.add.rectangle(0, 0, w, h, COLORS.accent, 0.9);
     bg.setStrokeStyle(2, 0xffffff, 0.9);
-    bg.setInteractive();
     const txt = this.add
       .text(0, 0, label, {
         fontSize: '24px',
@@ -171,40 +171,18 @@ export class CharacterSelectScene extends Phaser.Scene {
       .setOrigin(0.5);
     const container = this.add.container(x, y, [bg, txt]);
 
-    let pressed = false;
-    bg.on('pointerover', () => { if (!pressed) bg.setFillStyle(0xff5252, 1); });
-    bg.on('pointerout', () => { if (!pressed) bg.setFillStyle(COLORS.accent, 0.9); });
-    bg.on('pointerdown', () => {
-      pressed = true;
-      // 只改颜色, 不缩放 —— 缩放会缩小 hit area
+    // 用 zone 做交互区域 — 和 GameOverScene 完全相同的模式
+    const zone = this.add.zone(x, y, w, h);
+    zone.setInteractive();
+    zone.on('pointerdown', () => {
+      console.log(`[CharacterSelect] 按钮 "${label}" pointerdown!`);
       bg.setFillStyle(0xd50000, 1);
-      bg.setStrokeStyle(0);
-    });
-    let fired = false; // 防止 pointerup + pointertap 双重触发
-    bg.on('pointerup', () => {
-      if (!pressed || fired) return;
-      pressed = false; fired = true;
-      bg.setFillStyle(COLORS.accent, 0.9);
-      bg.setStrokeStyle(2, 0xffffff, 0.9);
       onClick();
-      this.time.delayedCall(300, () => { fired = false; });
     });
-    // pointertap: 移动端触摸更可靠 (自动处理 down→up 完整手势)
-    bg.on('pointertap', () => {
-      if (fired) return;
-      fired = true;
-      pressed = false;
-      bg.setFillStyle(COLORS.accent, 0.9);
-      bg.setStrokeStyle(2, 0xffffff, 0.9);
-      onClick();
-      this.time.delayedCall(300, () => { fired = false; });
-    });
-    bg.on('pointerupoutside', () => {
-      pressed = false;
-      container.setScale(1, 1);
-      bg.setFillStyle(COLORS.accent, 0.9);
-      bg.setStrokeStyle(2, 0xffffff, 0.9);
-    });
+    zone.on('pointerover', () => bg.setFillStyle(0xff5252, 1));
+    zone.on('pointerout', () => bg.setFillStyle(COLORS.accent, 0.9));
+    zone.on('pointerup', () => bg.setFillStyle(COLORS.accent, 0.9));
+
     return container;
   }
 

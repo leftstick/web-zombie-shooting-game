@@ -85,10 +85,6 @@ export class MainMenuScene extends Phaser.Scene {
     const h = 64;
     const bg = this.add.rectangle(0, 0, w, h, COLORS.accent, 0.85);
     bg.setStrokeStyle(2, 0xffffff, 0.9);
-    // 关键: 用 bg 自带的 setInteractive(), 不用 Container 自定义 hit area
-    // Container.setInteractive + 自定义 hitarea 在移动端坐标转换有 bug
-    bg.setInteractive();
-
     const txt = this.add
       .text(0, 0, label, {
         fontSize: '26px',
@@ -97,48 +93,19 @@ export class MainMenuScene extends Phaser.Scene {
         letterSpacing: 4,
       })
       .setOrigin(0.5);
-
     const container = this.add.container(x, y, [bg, txt]);
 
-    let pressed = false;
-
-    bg.on('pointerover', () => {
-      if (!pressed) bg.setFillStyle(0xffff5252, 1);
-    });
-    bg.on('pointerout', () => {
-      if (!pressed) bg.setFillStyle(COLORS.accent, 0.85);
-    });
-    bg.on('pointerdown', () => {
-      pressed = true;
-      // 只改颜色, 不缩放 container —— 缩放会缩小 hit area 导致 pointerup 丢失
+    // 用 zone 做交互区域 — pointerdown 直接触发, 移动端最可靠
+    const zone = this.add.zone(x, y, w, h);
+    zone.setInteractive();
+    zone.on('pointerdown', () => {
+      console.log(`[MainMenu] 按钮 "${label}" pointerdown!`);
       bg.setFillStyle(0xd50000, 1);
-      bg.setStrokeStyle(0);
-    });
-    bg.on('pointerup', () => {
-      if (!pressed) return;
-      pressed = false;
-      // 回弹动画 (此时 hit area 不再重要)
-      this.tweens.add({
-        targets: container,
-        scaleX: 1.06,
-        scaleY: 1.06,
-        duration: 80,
-        yoyo: true,
-        ease: 'Quad.easeOut',
-        onComplete: () => {
-          container.setScale(1, 1);
-        },
-      });
-      bg.setFillStyle(COLORS.accent, 0.85);
-      bg.setStrokeStyle(2, 0xffffff, 0.9);
       onClick();
     });
-    bg.on('pointerupoutside', () => {
-      pressed = false;
-      container.setScale(1, 1);
-      bg.setFillStyle(COLORS.accent, 0.85);
-      bg.setStrokeStyle(2, 0xffffff, 0.9);
-    });
+    zone.on('pointerover', () => bg.setFillStyle(0xff5252, 1));
+    zone.on('pointerout', () => bg.setFillStyle(COLORS.accent, 0.85));
+    zone.on('pointerup', () => bg.setFillStyle(COLORS.accent, 0.85));
 
     return container;
   }
