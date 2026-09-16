@@ -38,32 +38,12 @@ export class CharacterSelectScene extends Phaser.Scene {
       this.cards.push(card);
     });
 
-    // 确认按钮 — 用一次性防重入标志, 避免 bg.pointerup 和 container.pointertap 同时命中
-    let confirming = false;
-    const onConfirm = () => {
-      if (confirming) { console.log('[CharacterSelect] 防重入跳过'); return; }
-      confirming = true;
-      console.log('[CharacterSelect] 确认出战被点击! selectedIndex=', this.selectedIndex);
+    // 确认按钮 — 和 MainMenuScene 完全相同的模式 (已验证可用)
+    this.createButton(GAME_WIDTH / 2, 620, '确认出战', () => {
+      console.log('[CharacterSelect] 确认出战被点击!');
       const char = CHARACTER_LIST[this.selectedIndex];
       localStorage.setItem(STORAGE_KEYS.selectedCharacter, char.id);
-      console.log('[CharacterSelect] 即将 start GameScene, char=', char.id);
-      try {
-        this.scene.start('GameScene', { characterId: char.id });
-      } catch (err) {
-        confirming = false; // 异常时允许重试
-        console.error('[CharacterSelect] scene.start 异常:', err);
-      }
-    };
-    const confirmBtn = this.createButton(GAME_WIDTH / 2, 620, '确认出战', onConfirm);
-    // 同时在 confirmBtn 容器上加 pointertap 作为双保险 (Phaser pointertap 自动处理 down+up)
-    confirmBtn.setSize(240, 56);
-    confirmBtn.setInteractive(
-      new Phaser.Geom.Rectangle(-120, -28, 240, 56),
-      Phaser.Geom.Rectangle.Contains
-    );
-    confirmBtn.on('pointertap', () => {
-      console.log('[CharacterSelect] pointertap 触发, 双保险!');
-      onConfirm();
+      this.scene.start('GameScene', { characterId: char.id });
     });
 
     // 键盘快捷
@@ -200,19 +180,24 @@ export class CharacterSelectScene extends Phaser.Scene {
       bg.setFillStyle(0xd50000, 1);
       bg.setStrokeStyle(0);
     });
+    let fired = false; // 防止 pointerup + pointertap 双重触发
     bg.on('pointerup', () => {
-      if (!pressed) return;
-      pressed = false;
-      this.tweens.add({
-        targets: container,
-        scaleX: 1.06, scaleY: 1.06,
-        duration: 80, yoyo: true,
-        ease: 'Quad.easeOut',
-        onComplete: () => { container.setScale(1, 1); },
-      });
+      if (!pressed || fired) return;
+      pressed = false; fired = true;
       bg.setFillStyle(COLORS.accent, 0.9);
       bg.setStrokeStyle(2, 0xffffff, 0.9);
       onClick();
+      this.time.delayedCall(300, () => { fired = false; });
+    });
+    // pointertap: 移动端触摸更可靠 (自动处理 down→up 完整手势)
+    bg.on('pointertap', () => {
+      if (fired) return;
+      fired = true;
+      pressed = false;
+      bg.setFillStyle(COLORS.accent, 0.9);
+      bg.setStrokeStyle(2, 0xffffff, 0.9);
+      onClick();
+      this.time.delayedCall(300, () => { fired = false; });
     });
     bg.on('pointerupoutside', () => {
       pressed = false;
