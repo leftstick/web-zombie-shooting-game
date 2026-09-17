@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#000" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>CONTRA: HARD CORPS · 魂斗罗 铁血兵团</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    touch-action: none; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    font-family: 'Courier New', monospace;
+  }
+  #game { display: block; image-rendering: pixelated; }
+
+  /* === Overlay 层 === */
+  #overlay {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #overlay .screen {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    pointer-events: auto;
+    background: radial-gradient(ellipse at center, rgba(15,5,25,0.95) 0%, rgba(5,0,10,0.98) 100%);
+    overflow-y: auto; overflow-x: hidden;
+    padding: 20px 10px;
+  }
+  #overlay .hidden { display: none !important; }
+
+  .title {
+    font-size: clamp(28px, 8vw, 64px);
+    font-weight: 900; color: #ff3030;
+    text-shadow: 0 0 18px rgba(255,48,48,0.7), 3px 3px 0 #000, 6px 6px 0 #440000;
+    letter-spacing: 0.08em; margin-bottom: 6px; text-align: center;
+  }
+  .subtitle {
+    font-size: clamp(11px, 2.2vw, 16px); color: #88aacc;
+    letter-spacing: 0.3em; margin-bottom: 18px; text-align: center;
+  }
+  .tagline {
+    font-size: clamp(11px, 2vw, 14px); color: #6688aa;
+    margin-bottom: 18px; text-align: center; padding: 0 20px; line-height: 1.6;
+  }
+
+  .btn {
+    padding: 12px 40px; font-size: clamp(14px, 3vw, 20px);
+    font-weight: bold; color: #fff;
+    background: linear-gradient(180deg, #d02020 0%, #8a0808 100%);
+    border: 2px solid #ff4040; border-radius: 3px;
+    cursor: pointer; letter-spacing: 0.12em; margin: 6px 0;
+    box-shadow: 0 4px 10px rgba(200,30,30,0.4);
+    transition: transform 0.08s; font-family: inherit;
+  }
+  .btn:active { transform: translateY(2px); }
+  .btn.secondary {
+    background: linear-gradient(180deg, #224466 0%, #112244 100%);
+    border-color: #4488cc; box-shadow: 0 4px 10px rgba(50,90,160,0.4);
+  }
+
+  /* 角色选择 */
+  .char-grid {
+    display: flex; gap: 12px; margin-bottom: 24px;
+    flex-wrap: wrap; justify-content: center; padding: 0 12px;
+  }
+  .char-card {
+    width: clamp(90px, 20vw, 130px); padding: 12px 6px;
+    background: rgba(25,15,30,0.85);
+    border: 2px solid #443355; border-radius: 4px;
+    text-align: center; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .char-card.selected {
+    border-color: #ff3030; background: rgba(60,15,25,0.9);
+    box-shadow: 0 0 16px rgba(255,48,48,0.5);
+  }
+  .char-card .char-sprite {
+    width: 64px; height: 96px; margin: 0 auto 8px;
+    image-rendering: pixelated;
+    display: block;
+  }
+  .char-card .char-name {
+    font-size: clamp(11px, 2.2vw, 15px);
+    font-weight: bold; color: #eee; margin-bottom: 4px;
+  }
+  .char-card .char-desc { font-size: 10px; color: #888; line-height: 1.3; }
+
+  /* Game Over / 胜利 */
+  .go-title { font-size: clamp(28px, 7vw, 56px); font-weight: 900; margin-bottom: 20px; }
+  .go-title.dead { color: #ff3030; text-shadow: 0 0 16px rgba(255,48,48,0.6); }
+  .go-title.win  { color: #44dd66; text-shadow: 0 0 16px rgba(68,221,102,0.6); }
+  .go-stats {
+    font-size: clamp(13px, 2.6vw, 17px); color: #ccc;
+    margin-bottom: 28px; text-align: center; line-height: 1.8;
+  }
+  .go-stats span { color: #ff5050; font-weight: bold; }
+
+  .hint {
+    position: fixed; bottom: 10px; left: 50%;
+    transform: translateX(-50%); font-size: 11px; color: #555;
+    pointer-events: none; z-index: 50; text-align: center;
+  }
+</style>
+  <script type="module" crossorigin src="./assets/index-Dslm-hhQ.js"></script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="overlay">
+    <!-- 封面 -->
+    <div class="screen" id="screen-cover">
+      <div class="title">CONTRA</div>
+      <div class="subtitle">HARD CORPS · 铁血兵团</div>
+      <div class="tagline">2641年 · 外星战争五年后<br>城市无人武器失控 — HARD CORPS 出击</div>
+      <button class="btn" id="btn-start">开 始 游 戏</button>
+      <button class="btn secondary" id="btn-howto">操 作 说 明</button>
+    </div>
+
+    <!-- 角色选择 -->
+    <div class="screen hidden" id="screen-char">
+      <div class="subtitle">选 择 角 色</div>
+      <div class="char-grid">
+        <div class="char-card selected" data-char="ray">
+          <canvas class="char-sprite" width="64" height="96"></canvas>
+          <div class="char-name">RAY</div>
+          <div class="char-desc">标准型<br>生命3 · 武器均衡</div>
+        </div>
+        <div class="char-card" data-char="sheena">
+          <canvas class="char-sprite" width="64" height="96"></canvas>
+          <div class="char-name">SHEENA</div>
+          <div class="char-desc">敏捷型<br>生命3 · 移动快</div>
+        </div>
+        <div class="char-card" data-char="fang">
+          <canvas class="char-sprite" width="64" height="96"></canvas>
+          <div class="char-name">FANG</div>
+          <div class="char-desc">狼人<br>生命3 · 火力猛</div>
+        </div>
+        <div class="char-card" data-char="browny">
+          <canvas class="char-sprite" width="64" height="96"></canvas>
+          <div class="char-name">BROWNY</div>
+          <div class="char-desc">机器人<br>生命3 · 可悬浮</div>
+        </div>
+      </div>
+      <button class="btn" id="btn-confirm">出 击</button>
+      <button class="btn secondary" id="btn-back">← 返 回</button>
+    </div>
+
+    <!-- Game Over / 胜利 -->
+    <div class="screen hidden" id="screen-go">
+      <div class="go-title dead" id="go-title">MISSION FAILED</div>
+      <div class="go-stats">
+        击杀敌人: <span id="go-kills">0</span><br>
+        最终得分: <span id="go-score">0</span>
+      </div>
+      <button class="btn" id="btn-retry">再 战</button>
+      <button class="btn secondary" id="btn-menu">主 菜 单</button>
+    </div>
+  </div>
+
+  <div class="hint" id="hint">横屏体验更佳 · 左摇杆移动 · 右按钮 射击/跳跃/炸弹/换武器</div>
+
+</body>
+</html>
