@@ -30,6 +30,8 @@
     align-items: center; justify-content: center;
     pointer-events: auto;
     background: radial-gradient(ellipse at center, rgba(15,5,25,0.95) 0%, rgba(5,0,10,0.98) 100%);
+    overflow-y: auto; overflow-x: hidden;
+    padding: 20px 10px;
   }
   #overlay .hidden { display: none !important; }
 
@@ -41,11 +43,11 @@
   }
   .subtitle {
     font-size: clamp(11px, 2.2vw, 16px); color: #88aacc;
-    letter-spacing: 0.3em; margin-bottom: 36px; text-align: center;
+    letter-spacing: 0.3em; margin-bottom: 18px; text-align: center;
   }
   .tagline {
     font-size: clamp(11px, 2vw, 14px); color: #6688aa;
-    margin-bottom: 36px; text-align: center; padding: 0 20px; line-height: 1.6;
+    margin-bottom: 18px; text-align: center; padding: 0 20px; line-height: 1.6;
   }
 
   .btn {
@@ -80,18 +82,15 @@
     box-shadow: 0 0 16px rgba(255,48,48,0.5);
   }
   .char-card .char-sprite {
-    width: 40px; height: 64px; margin: 0 auto 8px;
-    border-radius: 3px; image-rendering: pixelated;
+    width: 64px; height: 96px; margin: 0 auto 8px;
+    image-rendering: pixelated;
+    display: block;
   }
   .char-card .char-name {
     font-size: clamp(11px, 2.2vw, 15px);
     font-weight: bold; color: #eee; margin-bottom: 4px;
   }
   .char-card .char-desc { font-size: 10px; color: #888; line-height: 1.3; }
-  .char-card[data-char="ray"] .char-sprite  { background: linear-gradient(180deg, #d04040 0%, #d04040 35%, #2244aa 35%, #2244aa 100%); }
-  .char-card[data-char="sheena"] .char-sprite { background: linear-gradient(180deg, #ffb080 0%, #ffb080 30%, #cc4488 30%, #cc4488 100%); }
-  .char-card[data-char="fang"] .char-sprite { background: linear-gradient(180deg, #888 0%, #888 30%, #aa6633 30%, #aa6633 100%); }
-  .char-card[data-char="browny"] .char-sprite { background: linear-gradient(180deg, #cccc00 0%, #cccc00 30%, #556677 30%, #556677 100%); }
 
   /* Game Over / 胜利 */
   .go-title { font-size: clamp(28px, 7vw, 56px); font-weight: 900; margin-bottom: 20px; }
@@ -128,22 +127,22 @@
       <div class="subtitle">选 择 角 色</div>
       <div class="char-grid">
         <div class="char-card selected" data-char="ray">
-          <div class="char-sprite"></div>
+          <canvas class="char-sprite" width="64" height="96"></canvas>
           <div class="char-name">RAY</div>
           <div class="char-desc">标准型<br>生命3 · 武器均衡</div>
         </div>
         <div class="char-card" data-char="sheena">
-          <div class="char-sprite"></div>
+          <canvas class="char-sprite" width="64" height="96"></canvas>
           <div class="char-name">SHEENA</div>
           <div class="char-desc">敏捷型<br>生命3 · 移动快</div>
         </div>
         <div class="char-card" data-char="fang">
-          <div class="char-sprite"></div>
+          <canvas class="char-sprite" width="64" height="96"></canvas>
           <div class="char-name">FANG</div>
           <div class="char-desc">狼人<br>生命3 · 火力猛</div>
         </div>
         <div class="char-card" data-char="browny">
-          <div class="char-sprite"></div>
+          <canvas class="char-sprite" width="64" height="96"></canvas>
           <div class="char-name">BROWNY</div>
           <div class="char-desc">机器人<br>生命3 · 可悬浮</div>
         </div>

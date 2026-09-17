@@ -15,18 +15,28 @@ const JUMP_VEL = -680;         // 跳跃初速度
 const BULLET_SPEED = 900;      // 子弹速度 px/s
 const TILE = 32;               // 瓦片大小
 
-// 画布
+// 画布 — 固定内部分辨率, CSS 缩放适配屏幕
+const BASE_W = 1280, BASE_H = 720;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+canvas.width = BASE_W;
+canvas.height = BASE_H;
 ctx.imageSmoothingEnabled = false;
 
-let VIEW_W = 1280, VIEW_H = 720;
+let VIEW_W = BASE_W, VIEW_H = BASE_H;
+let scaleX = 1, scaleY = 1;
 
 function resize() {
-  VIEW_W = window.innerWidth;
-  VIEW_H = window.innerHeight;
-  canvas.width = VIEW_W;
-  canvas.height = VIEW_H;
+  const sw = window.innerWidth, sh = window.innerHeight;
+  scaleX = sw / BASE_W;
+  scaleY = sh / BASE_H;
+  // 保持比例 (contain) — 横屏游戏优先填满
+  const s = Math.max(scaleX, scaleY);
+  canvas.style.width = (BASE_W * s) + 'px';
+  canvas.style.height = (BASE_H * s) + 'px';
+  canvas.style.position = 'fixed';
+  canvas.style.left = ((sw - BASE_W * s) / 2) + 'px';
+  canvas.style.top = ((sh - BASE_H * s) / 2) + 'px';
   ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', resize);
@@ -57,21 +67,29 @@ const touch = { left:0, right:0, up:0, down:0, fire:false, jump:false, bomb:fals
 
 // 虚拟摇杆区域
 function setupTouch() {
-  // 左半屏: 方向摇杆; 右半屏: 4个按钮
-  const btnSize = Math.min(VIEW_W, VIEW_H) * 0.13;
+  const btnSize = Math.min(BASE_W, BASE_H) * 0.13;
   const padR = btnSize * 1.2;
 
-  // 摇杆中心
-  const stickCX = padR + 20, stickCY = VIEW_H - padR - 30;
+  // 摇杆中心 (基于 1280x720 内部分辨率)
+  const stickCX = padR + 20, stickCY = BASE_H - padR - 30;
   let stickActive = false, stickId = null, stickDX = 0, stickDY = 0;
 
   // 按钮位置 (右下)
   const btns = [
-    { id:'fire',   cx: VIEW_W - padR*2 - 40, cy: VIEW_H - padR - 30, r: btnSize*0.55, label:'射' },
-    { id:'jump',   cx: VIEW_W - padR*1 - 20,  cy: VIEW_H - padR*2 - 30, r: btnSize*0.55, label:'跳' },
-    { id:'switch', cx: VIEW_W - padR*3 - 60,  cy: VIEW_H - padR*2 - 30, r: btnSize*0.45, label:'换' },
-    { id:'bomb',   cx: VIEW_W - padR*1 - 20,  cy: VIEW_H - padR*0.3 - 10, r: btnSize*0.4, label:'炸' },
+    { id:'fire',   cx: BASE_W - padR*2 - 40, cy: BASE_H - padR - 30, r: btnSize*0.55, label:'射' },
+    { id:'jump',   cx: BASE_W - padR*1 - 20,  cy: BASE_H - padR*2 - 30, r: btnSize*0.55, label:'跳' },
+    { id:'switch', cx: BASE_W - padR*3 - 60,  cy: BASE_H - padR*2 - 30, r: btnSize*0.45, label:'换' },
+    { id:'bomb',   cx: BASE_W - padR*1 - 20,  cy: BASE_H - padR*0.3 - 10, r: btnSize*0.4, label:'炸' },
   ];
+
+  // 触屏坐标 → 画布内部分辨率坐标
+  function toCanvasXY(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * (BASE_W / rect.width),
+      y: (clientY - rect.top) * (BASE_H / rect.height)
+    };
+  }
 
   function resetTouch() {
     touch.left = touch.right = touch.up = touch.down = 0;
@@ -82,9 +100,9 @@ function setupTouch() {
   canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     for (const t of e.changedTouches) {
-      const x = t.clientX, y = t.clientY;
-      // 摇杆区
-      if (x < VIEW_W * 0.45 && y > VIEW_H * 0.4) {
+      const { x, y } = toCanvasXY(t.clientX, t.clientY);
+      // 摇杆区 (左下 45%)
+      if (x < BASE_W * 0.45 && y > BASE_H * 0.4) {
         stickActive = true; stickId = t.identifier;
         stickDX = x - stickCX; stickDY = y - stickCY;
         updateStick();
@@ -107,7 +125,8 @@ function setupTouch() {
     e.preventDefault();
     for (const t of e.changedTouches) {
       if (t.identifier === stickId) {
-        stickDX = t.clientX - stickCX; stickDY = t.clientY - stickCY;
+        const { x, y } = toCanvasXY(t.clientX, t.clientY);
+        stickDX = x - stickCX; stickDY = y - stickCY;
         updateStick();
       }
     }
@@ -118,7 +137,6 @@ function setupTouch() {
     for (const t of e.changedTouches) {
       if (t.identifier === stickId) { stickActive = false; stickId = null; stickDX = 0; stickDY = 0; updateStick(); }
     }
-    // 按钮释放 (简化: 全部释放, 实际应记录 touchId)
     touch.fire = false; touch.jump = false; touch.switch = false; touch.bomb = false;
   }, { passive:false });
 
@@ -134,12 +152,10 @@ function setupTouch() {
     touch.down = stickDY > 10 ? stickDY / max : 0;
   }
 
-  // 绘制虚拟按键 (在 gameRenderPost 中)
   window.__drawTouch = () => {
     if (!stickActive && !touch.fire && !touch.jump && !touch.switch && !touch.bomb) return;
     ctx.save();
     ctx.globalAlpha = 0.5;
-    // 摇杆
     ctx.strokeStyle = '#aaa'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(stickCX, stickCY, padR, 0, Math.PI*2); ctx.stroke();
     if (stickActive) {
@@ -171,7 +187,7 @@ const CHARS = {
 class Player {
   constructor(x, y, charKey) {
     this.x = x; this.y = y;
-    this.w = 28; this.h = 44;
+    this.w = 36; this.h = 56;
     this.vx = 0; this.vy = 0;
     this.charKey = charKey;
     this.cfg = CHARS[charKey];
@@ -326,35 +342,136 @@ class Player {
     if (this.dead) return;
     if (this.invuln > 0 && Math.floor(this.invuln * 8) % 2 === 0) return;
     const sx = toSX(this.x), sy = toSY(this.y);
-    const c = this.cfg.color, p = this.cfg.pants;
     const sliding = this.slideTime > 0;
-    const h = sliding ? this.h * 0.5 : this.h;
+    const scale = sliding ? 0.6 : 1;
+    const h = this.h * scale;
     const yy = sliding ? sy + this.h - h : sy;
-    // 身体
-    ctx.fillStyle = c;
-    ctx.fillRect(sx, yy, this.w, h);
-    // 裤子
-    ctx.fillStyle = p;
-    ctx.fillRect(sx, yy + h * 0.55, this.w, h * 0.45);
-    // 头
-    ctx.fillStyle = '#ffd8b0';
-    ctx.fillRect(sx + 6, yy - 8, 16, 14);
-    // 头发/帽子
-    ctx.fillStyle = c;
-    ctx.fillRect(sx + 5, yy - 10, 18, 6);
-    // 枪
-    ctx.save();
-    ctx.translate(sx + this.w / 2, yy + h / 2 - 4);
-    ctx.rotate(this.aimAngle);
-    ctx.fillStyle = '#333';
-    ctx.fillRect(0, -3, 22, 6);
-    ctx.restore();
-    // 武器标签
-    ctx.fillStyle = '#fff';
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(this.weapon.toUpperCase(), sx, sy - 14);
+    drawPixelChar(ctx, sx, yy, this.w, h, this.charKey, this.facing, this.aimAngle, sliding);
   }
+}
+
+// ==================== 像素画角色绘制 ====================
+// 在 (x,y) 处绘制一个 w x h 的角色 (x,y 为左上角)
+function drawPixelChar(c, x, y, w, h, charKey, facing, aimAngle, sliding) {
+  c.save();
+  if (facing === -1) {
+    c.translate(x + w, y);
+    c.scale(-1, 1);
+  } else {
+    c.translate(x, y);
+  }
+  const u = w / 14; // 单位像素宽度
+  const v = h / 22; // 单位像素高度
+  const px = (cx, cy, cw, ch, color) => {
+    c.fillStyle = color;
+    c.fillRect(cx * u, cy * v, cw * u, ch * v);
+  };
+
+  const skin = '#ffd8b0', skinShade = '#e0a878';
+  const black = '#1a1a1a', darkGray = '#444', gray = '#777';
+
+  if (charKey === 'ray') {
+    const red = '#d02020', redDark = '#8a1010', blue = '#2244aa', blueDark = '#162a6a';
+    // 头巾
+    px(4, 0, 6, 2, red); px(3, 1, 8, 1, redDark);
+    // 脸
+    px(4, 2, 6, 4, skin); px(4, 5, 6, 1, skinShade);
+    px(5, 3, 1, 1, black); px(8, 3, 1, 1, black); // 眼睛
+    // 身体(红背心)
+    px(3, 6, 8, 5, red); px(3, 6, 8, 1, redDark);
+    px(6, 6, 2, 5, '#ffcc00'); // 背带
+    // 手臂
+    px(2, 7, 1, 4, skin); px(11, 7, 1, 4, skin);
+    // 枪
+    c.save();
+    c.translate(12 * u, 9 * v);
+    c.rotate(aimAngle || 0);
+    c.fillStyle = darkGray;
+    c.fillRect(0, -1*v, 8*u, 2*v);
+    c.fillStyle = '#888';
+    c.fillRect(7*u, -1.5*v, 1*u, 3*v);
+    c.restore();
+    // 裤子
+    px(4, 11, 3, 6, blue); px(7, 11, 3, 6, blue);
+    px(4, 11, 6, 1, blueDark);
+    // 靴子
+    px(3, 17, 4, 3, black); px(7, 17, 4, 3, black);
+    px(3, 19, 4, 1, darkGray); px(7, 19, 4, 1, darkGray);
+  }
+  else if (charKey === 'sheena') {
+    const pink = '#d04080', pinkDark = '#8a2050', dark = '#2a1a3a', hair = '#e8c060';
+    // 头发
+    px(3, 0, 8, 3, hair); px(3, 1, 1, 5, hair); px(10, 1, 1, 5, hair);
+    // 脸
+    px(4, 3, 6, 4, skin); px(4, 6, 6, 1, skinShade);
+    px(5, 4, 1, 1, black); px(8, 4, 1, 1, black);
+    // 身体(粉色战斗服)
+    px(3, 7, 8, 5, pink); px(3, 7, 8, 1, pinkDark);
+    // 手臂
+    px(2, 8, 1, 4, skin); px(11, 8, 1, 4, skin);
+    // 枪
+    c.save();
+    c.translate(12 * u, 10 * v);
+    c.rotate(aimAngle || 0);
+    c.fillStyle = darkGray;
+    c.fillRect(0, -1*v, 8*u, 2*v);
+    c.restore();
+    // 裤子
+    px(4, 12, 3, 5, dark); px(7, 12, 3, 5, dark);
+    // 靴子
+    px(3, 17, 4, 3, black); px(7, 17, 4, 3, black);
+  }
+  else if (charKey === 'fang') {
+    const fur = '#999', furDark = '#666', brown = '#7a4a28', mech = '#556677', orange = '#ff6600';
+    // 狼头
+    px(4, 0, 6, 2, fur); px(3, 1, 1, 1, fur); px(10, 1, 1, 1, fur); // 耳朵
+    px(4, 1, 6, 4, fur); px(4, 5, 6, 1, furDark);
+    px(5, 3, 1, 1, orange); px(8, 3, 1, 1, orange); // 眼睛(发光)
+    px(6, 5, 2, 1, black); // 嘴
+    // 身体(棕色战术背心)
+    px(3, 6, 8, 6, brown); px(3, 6, 8, 1, '#5a3018');
+    px(5, 7, 4, 4, furDark);
+    // 机械臂(左手)
+    px(1, 7, 2, 5, mech); px(0, 10, 2, 2, darkGray);
+    // 右臂+枪
+    c.save();
+    c.translate(12 * u, 9 * v);
+    c.rotate(aimAngle || 0);
+    c.fillStyle = darkGray;
+    c.fillRect(0, -1.5*v, 9*u, 3*v);
+    c.restore();
+    // 腿
+    px(4, 12, 3, 5, fur); px(7, 12, 3, 5, fur);
+    px(4, 12, 6, 1, furDark);
+    // 靴子
+    px(3, 17, 4, 3, black); px(7, 17, 4, 3, black);
+  }
+  else if (charKey === 'browny') {
+    const yellow = '#d4b800', yellowDark = '#8a7800', metal = '#556677', metalDark = '#334455', eye = '#00ddff';
+    // 天线
+    px(6, 0, 1, 2, metal); px(5, 0, 3, 1, eye);
+    // 圆头
+    px(3, 2, 8, 5, yellow); px(3, 2, 8, 1, yellowDark);
+    px(4, 1, 6, 1, yellow); px(4, 7, 6, 1, yellowDark);
+    // 单眼
+    px(5, 4, 4, 2, black); px(6, 4, 2, 2, eye);
+    // 身体
+    px(3, 8, 8, 7, metal); px(3, 8, 8, 1, metalDark);
+    px(5, 9, 4, 5, '#6688aa');
+    // 手臂
+    px(2, 9, 1, 4, metal); px(11, 9, 1, 4, metal);
+    // 枪
+    c.save();
+    c.translate(12 * u, 11 * v);
+    c.rotate(aimAngle || 0);
+    c.fillStyle = darkGray;
+    c.fillRect(0, -1*v, 7*u, 2*v);
+    c.restore();
+    // 短腿
+    px(4, 15, 3, 3, metalDark); px(7, 15, 3, 3, metalDark);
+    px(3, 18, 4, 2, black); px(7, 18, 4, 2, black);
+  }
+  c.restore();
 }
 
 // ==================== 子弹 ====================
@@ -584,15 +701,15 @@ class Enemy {
       const bw = 200;
       const hpR = clamp(this.hp / 600, 0, 1);
       ctx.fillStyle = '#400';
-      ctx.fillRect(VIEW_W/2 - bw/2, 20, bw, 14);
+      ctx.fillRect(BASE_W/2 - bw/2, 20, bw, 14);
       ctx.fillStyle = '#f33';
-      ctx.fillRect(VIEW_W/2 - bw/2, 20, bw * hpR, 14);
+      ctx.fillRect(BASE_W/2 - bw/2, 20, bw * hpR, 14);
       ctx.strokeStyle = '#fff';
-      ctx.strokeRect(VIEW_W/2 - bw/2, 20, bw, 14);
+      ctx.strokeRect(BASE_W/2 - bw/2, 20, bw, 14);
       ctx.fillStyle = '#fff';
       ctx.font = '12px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('BOSS', VIEW_W/2, 31);
+      ctx.fillText('BOSS', BASE_W/2, 31);
     }
   }
 }
@@ -844,58 +961,94 @@ function update(dt) {
 }
 
 // ==================== 渲染 ====================
-function render() {
-  // 天空
-  const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
-  grad.addColorStop(0, '#1a0a2a');
-  grad.addColorStop(0.5, '#2a1535');
-  grad.addColorStop(1, '#3a2030');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-
-  // 远景建筑 (视差)
-  ctx.fillStyle = '#1a1228';
-  for (let i = 0; i < 30; i++) {
-    const bx = (i * 200 - cameraX * 0.2) % (VIEW_W + 400) - 200;
-    const bh = 100 + (i * 37) % 150;
-    ctx.fillRect(bx, VIEW_H - bh - 100, 120, bh);
-  }
-  // 中景建筑
-  ctx.fillStyle = '#2a1f3a';
-  for (let i = 0; i < 20; i++) {
-    const bx = (i * 280 - cameraX * 0.5) % (VIEW_W + 500) - 250;
-    const bh = 150 + (i * 53) % 120;
-    ctx.fillRect(bx, VIEW_H - bh - 80, 160, bh);
-    // 窗户
-    ctx.fillStyle = '#ffee88';
-    for (let wy = 0; wy < bh - 20; wy += 24) {
-      for (let wx = 0; wx < 140; wx += 24) {
-        if ((i + wx + wy) % 3 === 0) ctx.fillRect(bx + 10 + wx, VIEW_H - bh - 70 + wy, 10, 14);
+// 画一排建筑 (offset: 视差偏移, baseY: 地面基线, w/h: 建筑宽高范围, spacing: 间距, withWindows)
+function drawBuildings(offset, baseY, w, hMin, hMax, withWindows) {
+  const period = w + 40; // 建筑周期
+  const startIdx = Math.floor(offset / period) - 1;
+  const endIdx = startIdx + Math.ceil(BASE_W / period) + 3;
+  for (let i = startIdx; i < endIdx; i++) {
+    const seed = Math.abs(i * 73 + Math.floor(offset / period) * 131) % 1000;
+    const bx = i * period - offset;
+    const bh = hMin + (seed % (hMax - hMin));
+    const by = baseY - bh;
+    // 建筑主体
+    ctx.fillRect(bx, by, w, bh);
+    // 顶部装饰
+    ctx.fillRect(bx + 4, by - 8, w - 8, 8);
+    if (withWindows) {
+      ctx.fillStyle = '#ffd860';
+      const cols = Math.floor(w / 26);
+      const rows = Math.floor(bh / 30);
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const lit = ((i * 7 + r * 3 + c * 5 + seed) % 4) < 2;
+          if (lit) {
+            ctx.globalAlpha = 0.7 + ((seed + r + c) % 3) * 0.1;
+            ctx.fillRect(bx + 8 + c * 26, by + 12 + r * 30, 12, 16);
+          }
+        }
       }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#1e1430';
     }
-    ctx.fillStyle = '#2a1f3a';
   }
+}
+
+function render() {
+  // 天空渐变
+  const grad = ctx.createLinearGradient(0, 0, 0, BASE_H);
+  grad.addColorStop(0, '#0d0520');
+  grad.addColorStop(0.5, '#1a0a2e');
+  grad.addColorStop(0.85, '#2d1538');
+  grad.addColorStop(1, '#3d2030');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, BASE_W, BASE_H);
+
+  // 月亮
+  ctx.fillStyle = '#f0e8c0';
+  ctx.globalAlpha = 0.6;
+  ctx.beginPath();
+  ctx.arc(BASE_W - 200, 120, 50, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // 远景建筑剪影 (视差 0.2)
+  ctx.fillStyle = '#120a22';
+  drawBuildings(cameraX * 0.2, BASE_H - 180, 130, 80, 220, false);
+  // 中景建筑 (视差 0.45) — 带窗户
+  ctx.fillStyle = '#1e1430';
+  drawBuildings(cameraX * 0.45, BASE_H - 130, 160, 110, 260, true);
 
   // 地面
-  ctx.fillStyle = '#3a2a2a';
-  ctx.fillRect(0, toSY(GROUND_Y), VIEW_W, VIEW_H - toSY(GROUND_Y));
+  ctx.fillStyle = '#2a1d28';
+  ctx.fillRect(0, toSY(GROUND_Y), BASE_W, BASE_H - toSY(GROUND_Y));
   // 地面顶线
   ctx.fillStyle = '#5a4030';
-  ctx.fillRect(0, toSY(GROUND_Y), VIEW_W, 6);
+  ctx.fillRect(0, toSY(GROUND_Y), BASE_W, 6);
   // 地面纹理
-  ctx.fillStyle = '#2a1a1a';
-  for (let i = 0; i < 40; i++) {
-    const tx = (i * 60 - cameraX) % (VIEW_W + 120) - 60;
-    ctx.fillRect(tx, toSY(GROUND_Y) + 8, 30, 4);
+  ctx.fillStyle = '#3a2828';
+  for (let i = 0; i < 60; i++) {
+    const tx = ((i * 80 - cameraX) % (BASE_W + 160) + BASE_W + 160) % (BASE_W + 160) - 80;
+    ctx.fillRect(tx, toSY(GROUND_Y) + 10, 40, 5);
+  }
+  // 地面裂缝
+  ctx.fillStyle = '#1a1012';
+  for (let i = 0; i < 20; i++) {
+    const tx = ((i * 200 - cameraX * 0.9) % (BASE_W + 200) + BASE_W + 200) % (BASE_W + 200) - 100;
+    ctx.fillRect(tx, toSY(GROUND_Y) + 30, 2, 30);
   }
 
   // 平台
-  ctx.fillStyle = '#445566';
+  ctx.fillStyle = '#3a4a5a';
   for (const p of platforms) {
-    ctx.fillRect(toSX(p.x), toSY(p.y), p.w, p.h);
-    ctx.fillStyle = '#667788';
-    ctx.fillRect(toSX(p.x), toSY(p.y), p.w, 4);
-    ctx.fillStyle = '#445566';
+    const px = toSX(p.x), py = toSY(p.y);
+    if (px + p.w < 0 || px > BASE_W) continue;
+    ctx.fillRect(px, py, p.w, p.h);
+    ctx.fillStyle = '#5a7088';
+    ctx.fillRect(px, py, p.w, 4);
+    ctx.fillStyle = '#2a3a4a';
+    ctx.fillRect(px, py + p.h - 3, p.w, 3);
+    ctx.fillStyle = '#3a4a5a';
   }
 
   // 武器胶囊
@@ -942,18 +1095,30 @@ function drawHUD() {
   ctx.fillText('BOMB ' + player.bombs, 16, 50);
   // 得分
   ctx.textAlign = 'right';
-  ctx.fillText('SCORE ' + score, VIEW_W - 16, 28);
-  ctx.fillText('KILLS ' + kills, VIEW_W - 16, 50);
+  ctx.fillText('SCORE ' + score, BASE_W - 16, 28);
+  ctx.fillText('KILLS ' + kills, BASE_W - 16, 50);
   // 武器
   ctx.textAlign = 'left';
   ctx.fillStyle = weaponConfig[player.weapon].color;
-  ctx.fillText('WEAPON: ' + player.weapon.toUpperCase(), 16, VIEW_H - 16);
+  ctx.font = 'bold 14px monospace';
+  ctx.fillText('WEAPON: ' + player.weapon.toUpperCase(), 16, BASE_H - 16);
 }
 
 // ==================== DOM 事件 ====================
 let selectedChar = 'ray';
 
 function bindDOM() {
+  // 绘制角色选择卡的像素画立绘
+  document.querySelectorAll('.char-card').forEach(card => {
+    const canvas = card.querySelector('.char-sprite');
+    if (!canvas) return;
+    const cctx = canvas.getContext('2d');
+    cctx.imageSmoothingEnabled = false;
+    cctx.clearRect(0, 0, canvas.width, canvas.height);
+    // 立绘稍大, 居中绘制
+    drawPixelChar(cctx, 8, 0, 48, 72, card.dataset.char, 1, 0, false);
+  });
+
   document.getElementById('btn-start').addEventListener('click', () => showScreen('screen-char'));
   document.getElementById('btn-howto').addEventListener('click', () => {
     alert('【操作说明】\n\n键盘:\n  A/D 或 ←/→ 移动\n  W/↑/空格 跳跃\n  S/↓ 蹲下 (向下跳)\n  J 射击\n  K 切换武器\n  L 炸弹\n  ↓+跳 滑铲(无敌)\n\n触屏:\n  左摇杆移动\n  右侧: 射/跳/换/炸\n\n目标: 击败 Boss, 通关!');
