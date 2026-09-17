@@ -584,19 +584,20 @@ class Enemy {
 
     switch (type) {
       case 'soldier':
-        this.w = 24; this.h = 40; this.hp = 15; this.speed = 60; this.score = 100;
+        this.w = 24; this.h = 40; this.hp = 15; this.speed = 35; this.score = 100;
         this.color = '#557755'; break;
       case 'robot':
-        this.w = 30; this.h = 36; this.hp = 30; this.speed = 40; this.score = 200;
+        this.w = 30; this.h = 36; this.hp = 30; this.speed = 22; this.score = 200;
         this.color = '#888'; break;
       case 'flyer':
-        this.w = 28; this.h = 22; this.hp = 12; this.speed = 120; this.score = 150;
+        this.w = 28; this.h = 22; this.hp = 12; this.speed = 70; this.score = 150;
         this.color = '#aa4488'; this.flyY = y; break;
       case 'turret':
-        this.w = 28; this.h = 24; this.hp = 40; this.speed = 0; this.score = 250;
+        // 改为缓慢移动的撞击型敌人 (不再固定炮塔)
+        this.w = 28; this.h = 24; this.hp = 40; this.speed = 18; this.score = 250;
         this.color = '#776644'; break;
       case 'boss':
-        this.w = 120; this.h = 100; this.hp = 600; this.speed = 50; this.score = 5000;
+        this.w = 120; this.h = 100; this.hp = 600; this.speed = 28; this.score = 5000;
         this.color = '#882222'; this.phase = 0; break;
     }
     this.vx = -this.speed;
@@ -614,33 +615,22 @@ class Enemy {
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         if (this.y + this.h >= GROUND_Y) { this.y = GROUND_Y - this.h; this.vy = 0; }
-        // 朝玩家走
+        // 朝玩家走 (只靠撞击造成伤害, 不再开枪)
         if (player && !player.dead) this.vx = Math.sign(player.x - this.x) * this.speed;
-        // 射击
-        this.shootTimer -= dt;
-        if (this.shootTimer <= 0 && player && Math.abs(player.x - this.x) < 500) {
-          this.shoot();
-          this.shootTimer = rand(1.2, 2.5);
-        }
         break;
       case 'flyer':
-        // 飞行, 上下波动
+        // 飞行, 上下波动 (不再开枪, 靠撞击)
         this.y = this.flyY + Math.sin(this.t * 3) * 40;
         this.x += this.vx * dt;
-        this.shootTimer -= dt;
-        if (this.shootTimer <= 0 && player) {
-          const a = Math.atan2(player.y - this.y, player.x - this.x);
-          bullets.push(new Bullet(this.x+this.w/2, this.y+this.h/2, Math.cos(a)*400, Math.sin(a)*400, 1, '#ff4444', 5, 3, false));
-          this.shootTimer = rand(1.5, 3);
-        }
+        if (player && !player.dead) this.vx = Math.sign(player.x - this.x) * this.speed;
         break;
       case 'turret':
-        this.shootTimer -= dt;
-        if (this.shootTimer <= 0 && player) {
-          const a = Math.atan2(player.y - this.y, player.x - this.x);
-          bullets.push(new Bullet(this.x+this.w/2, this.y+this.h/2, Math.cos(a)*500, Math.sin(a)*500, 1, '#ff6600', 6, 2, false));
-          this.shootTimer = rand(0.8, 1.6);
-        }
+        // 改为缓慢移动的撞击型敌人 (不再开枪)
+        this.vy += GRAVITY * dt;
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        if (this.y + this.h >= GROUND_Y) { this.y = GROUND_Y - this.h; this.vy = 0; }
+        if (player && !player.dead) this.vx = Math.sign(player.x - this.x) * this.speed;
         break;
       case 'boss':
         this.updateBoss(dt);
@@ -656,34 +646,19 @@ class Enemy {
   }
 
   updateBoss(dt) {
-    // Boss 在地面附近左右移动
+    // Boss 在地面附近左右移动 (不再开枪, 靠撞击 + 跳跃砸地造成伤害)
     this.vy += GRAVITY * 0.3 * dt;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
     if (this.y + this.h >= GROUND_Y) { this.y = GROUND_Y - this.h; this.vy = 0; }
+    // 朝玩家追击
+    if (player && !player.dead) this.vx = Math.sign(player.x - this.x) * this.speed;
     // 边界反弹
     if (this.x < cameraX + 100 || this.x + this.w > cameraX + VIEW_W - 100) this.vx *= -1;
-
-    this.shootTimer -= dt;
-    if (this.shootTimer <= 0) {
-      // 扇形弹幕
-      const n = 5;
-      for (let i = 0; i < n; i++) {
-        const a = Math.PI + (i - (n-1)/2) * 0.3;
-        bullets.push(new Bullet(this.x, this.y+this.h/2, Math.cos(a)*350, Math.sin(a)*350, 1, '#ff3030', 7, 3, false));
-      }
-      this.shootTimer = 1.2;
-    }
     // 跳
     if (this.t % 4 < dt && this.y + this.h >= GROUND_Y - 1) {
       this.vy = -500;
     }
-  }
-
-  shoot() {
-    if (!player) return;
-    const a = Math.atan2(player.y - this.y, player.x - this.x);
-    bullets.push(new Bullet(this.x+this.w/2, this.y+this.h/2, Math.cos(a)*400, Math.sin(a)*400, 1, '#ff5555', 5, 2, false));
   }
 
   hit(dmg) { this.hp -= dmg; this.hitFlash = 0.08; }
