@@ -1,9 +1,9 @@
 {
-  "name": "contra-hard-corps",
+  "name": "outrun-web",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "MD版魂斗罗 铁血兵团 — 纯 Canvas 网页移植版，支持PC键盘与移动端触控",
+  "description": "OutRun 户外大飙车 — 纯 Canvas 伪3D赛车网页游戏，支持PC键盘与移动端触控",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
