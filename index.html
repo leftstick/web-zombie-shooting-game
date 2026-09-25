@@ -157,16 +157,23 @@ const ctx = canvas.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 
 function resize() {
+  // 兼容移动端: 优先用 visualViewport (处理地址栏/键盘弹出), 否则 innerWidth
+  const vv = window.visualViewport;
+  W = vv ? vv.width : window.innerWidth;
+  H = vv ? vv.height : window.innerHeight;
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth;
-  H = window.innerHeight;
+  // 画布像素 =  CSS 尺寸 × DPR (高清屏不糊), 但绘制坐标仍用 CSS 像素
   canvas.width = Math.floor(W * DPR);
   canvas.height = Math.floor(H * DPR);
   canvas.style.width = W + 'px';
   canvas.style.height = H + 'px';
+  // 关键: 把绘图坐标系缩放到 DPR, 否则画面只占画布左上角 1/DPR 区域 (右侧留黑)
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 100));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 resize();
 
 // ==================== AUDIO (Web Audio FM 合成器) ====================
@@ -382,12 +389,12 @@ let aiCars = [];
 const CAR_COLORS = ['#2060ff','#20c020','#ffcc00','#c040ff','#ff8800','#00cccc','#ffffff','#ff3030'];
 function spawnAICars() {
   aiCars = [];
-  // 生成 60 辆车, 分布在玩家前方不同距离, 部分慢速便于超越
+  // 生成 60 辆车, 散布在玩家前方不同距离 (最近也在 12 段外, 避免紧贴重叠成重影)
   for (let i=0; i<60; i++) {
     let segIdx;
-    if (i < 6) segIdx = 1 + i;          // 前 6 辆紧贴玩家前方 (立刻可见)
-    else if (i < 18) segIdx = 8 + Math.floor(Math.random() * 40);
-    else segIdx = 50 + Math.floor(Math.random() * (segments.length - 100));
+    if (i < 10) segIdx = 12 + Math.floor(Math.random() * 25);     // 近距车 (12~36 段)
+    else if (i < 30) segIdx = 40 + Math.floor(Math.random() * 80); // 中距车
+    else segIdx = 130 + Math.floor(Math.random() * (segments.length - 200)); // 远距车
     aiCars.push({
       offset: (Math.random()*2 - 1) * 0.7,   // 车辆分布在路面内, 便于碰撞
       speed: 500 + Math.random() * 4500,  // 慢车居多, 便于玩家追上
