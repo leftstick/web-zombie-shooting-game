@@ -255,13 +255,13 @@ const Audio = {
 };
 
 // ==================== 道路主题 (不同关卡风景) ====================
-// road 用深沥青色, rumble 红白/红黄相间, 与草地强对比
+// road 用深沥青色, rumble 红白/红黄相间, 草地两色极接近(避免水平斑马纹)
 const THEMES = [
-  { name:'beach',   sky:['#7ec8ff','#cfeaff'], grass:['#4fae4f','#3f9e3f'], road:['#3a3a42','#34343c'], rumble:['#ffffff','#e02020'], sprites:'palm' },
-  { name:'desert',  sky:['#ffb366','#ffe0b3'], grass:['#d9a066','#c89055'], road:['#3c3c44','#36363e'], rumble:['#ffffff','#e02020'], sprites:'cactus' },
-  { name:'mountain',sky:['#8fb8e8','#d4e8ff'], grass:['#4e7a35','#426a2c'], road:['#3a3a42','#34343c'], rumble:['#ffffff','#e02020'], sprites:'pine' },
-  { name:'sunset',  sky:['#ff7043','#ffcc80'], grass:['#6e5232','#5e4528'], road:['#2e2e36','#28282e'], rumble:['#ffffff','#ffcc00'], sprites:'rock' },
-  { name:'night',   sky:['#0a0a2a','#1a1a4a'], grass:['#162416','#111d11'], road:['#24242c','#1e1e24'], rumble:['#ffffff','#ffcc00'], sprites:'pine' },
+  { name:'beach',   sky:['#7ec8ff','#cfeaff'], grass:['#4cae4c','#48a848'], road:['#3a3a42','#35353d'], rumble:['#ffffff','#e02020'], sprites:'palm' },
+  { name:'desert',  sky:['#ffb366','#ffe0b3'], grass:['#d6a060','#cf9a5a'], road:['#3c3c44','#36363e'], rumble:['#ffffff','#e02020'], sprites:'cactus' },
+  { name:'mountain',sky:['#8fb8e8','#d4e8ff'], grass:['#4c7a35','#477231'], road:['#3a3a42','#35353d'], rumble:['#ffffff','#e02020'], sprites:'pine' },
+  { name:'sunset',  sky:['#ff7043','#ffcc80'], grass:['#6c5030','#664b2d'], road:['#2e2e36','#28282e'], rumble:['#ffffff','#ffcc00'], sprites:'rock' },
+  { name:'night',   sky:['#0a0a2a','#1a1a4a'], grass:['#162416','#142114'], road:['#24242c','#1e1e24'], rumble:['#ffffff','#ffcc00'], sprites:'pine' },
 ];
 
 // ==================== 道路生成 ====================
@@ -737,8 +737,8 @@ function drawSegment(seg, theme) {
   }
 }
 
-// 路缘宽度 (取路面宽度的 1/4, 足够醒目)
-function rumbleWidth(w) { return w * 0.25; }
+// 路缘宽度 (路面宽度的 14%, 醒目但不抢戏)
+function rumbleWidth(w) { return w * 0.14; }
 // 车道线宽度
 function laneMarkerWidth(w) { return Math.max(2, w * 0.02); }
 
