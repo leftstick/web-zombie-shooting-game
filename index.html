@@ -397,7 +397,7 @@ function spawnAICars() {
     else if (i < 30) segIdx = 40 + Math.floor(Math.random() * 80); // 中距车
     else segIdx = 130 + Math.floor(Math.random() * (segments.length - 200)); // 远距车
     aiCars.push({
-      offset: (Math.random()*2 - 1) * 0.7,   // 车辆分布在路面内, 便于碰撞
+      offset: (Math.random()*2 - 1) * 0.6,   // 横向偏移 ±0.6, 车完全在路面内
       speed: 500 + Math.random() * 4500,  // 慢车居多, 便于玩家追上
       z: segIdx * CFG.SEG_LEN,
       color: CAR_COLORS[Math.floor(Math.random()*CAR_COLORS.length)],
@@ -550,11 +550,11 @@ function update(dt) {
     // 循环
     if (car.z > player.z + CFG.DRAW_DIST * CFG.SEG_LEN) {
       car.z = player.z - CFG.DRAW_DIST * CFG.SEG_LEN * 0.3;
-      car.offset = (Math.random()*2 - 1) * 0.8;
+      car.offset = (Math.random()*2 - 1) * 0.6;
     }
     if (car.z < player.z - CFG.SEG_LEN * 20) {
       car.z = player.z + CFG.DRAW_DIST * CFG.SEG_LEN * 0.8;
-      car.offset = (Math.random()*2 - 1) * 0.8;
+      car.offset = (Math.random()*2 - 1) * 0.6;
     }
   }
 
@@ -694,8 +694,8 @@ function drawSegment(seg, theme) {
   const px1 = seg.p1.screen.x, py1 = seg.p1.screen.y, pw1 = seg.p1.screen.w;
   const px2 = seg.p2.screen.x, py2 = seg.p2.screen.y, pw2 = seg.p2.screen.w;
 
-  // 草地 (路两侧)
-  ctx.fillStyle = fogColor(a ? theme.grass[0] : theme.grass[1], seg.fog);
+  // 草地 (路两侧) — 单一纯色, 绝不交替, 否则会形成水平斑马纹
+  ctx.fillStyle = fogColor(theme.grass[0], seg.fog);
   ctx.fillRect(0, py2, W, py1 - py2);
 
   // 路肩: 红白/红黄相间的 rumble strip (加宽, 醒目)
