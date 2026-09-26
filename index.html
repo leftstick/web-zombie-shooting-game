@@ -642,6 +642,15 @@ function render() {
   let x = 0, dx = 0;
   let maxy = H; // 记录已绘制的最底部 y, 用于遮挡
 
+  // --- 草地: 一次性垂直渐变 (地平线→屏幕底), 彻底消除分段条纹 ---
+  // 地平线附近偏雾色(远), 底部为纯草色(近)
+  const horizonY = H * 0.5;
+  const grassGrad = ctx.createLinearGradient(0, horizonY, 0, H);
+  grassGrad.addColorStop(0, fogColor(theme.grass[0], 0.7));
+  grassGrad.addColorStop(1, theme.grass[0]);
+  ctx.fillStyle = grassGrad;
+  ctx.fillRect(0, horizonY, W, H - horizonY);
+
   // --- 绘制路面 (远→近) ---
   for (let n = 0; n < CFG.DRAW_DIST; n++) {
     const segIdx = (playerSeg.index + n) % segments.length;
@@ -694,9 +703,7 @@ function drawSegment(seg, theme) {
   const px1 = seg.p1.screen.x, py1 = seg.p1.screen.y, pw1 = seg.p1.screen.w;
   const px2 = seg.p2.screen.x, py2 = seg.p2.screen.y, pw2 = seg.p2.screen.w;
 
-  // 草地 (路两侧) — 单一纯色, 绝不交替, 否则会形成水平斑马纹
-  ctx.fillStyle = fogColor(theme.grass[0], seg.fog);
-  ctx.fillRect(0, py2, W, py1 - py2);
+  // 注: 草地已在 render() 中一次性渐变绘制, 此处只画路面元素, 避免条纹
 
   // 路肩: 红白/红黄相间的 rumble strip (加宽, 醒目)
   const rumbleCol = a ? theme.rumble[0] : theme.rumble[1];
