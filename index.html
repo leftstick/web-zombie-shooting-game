@@ -581,36 +581,43 @@ function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 
 // ==================== 渲染 ====================
 function drawSky(theme) {
-  const g = ctx.createLinearGradient(0, 0, 0, H * 0.6);
+  const horizonY = H * 0.5;
+  // 天空渐变 (仅上半)
+  const g = ctx.createLinearGradient(0, 0, 0, horizonY);
   g.addColorStop(0, theme.sky[0]);
   g.addColorStop(1, theme.sky[1]);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(0, 0, W, horizonY);
   // 云朵 / 星空
   if (theme.name === 'night') {
     ctx.fillStyle = '#fff';
     for (let i=0;i<80;i++){
-      const x=(i*137.5)%W, y=(i*53.7)%(H*0.5);
+      const x=(i*137.5)%W, y=(i*53.7)%(horizonY*0.5);
       ctx.fillRect(x, y, 2, 2);
     }
     ctx.fillStyle = '#ffee88';
-    ctx.beginPath(); ctx.arc(W*0.8, H*0.15, 28, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(W*0.8, horizonY*0.3, 28, 0, Math.PI*2); ctx.fill();
   } else {
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    drawCloud(W*0.2, H*0.15, 60);
-    drawCloud(W*0.6, H*0.1, 80);
-    drawCloud(W*0.85, H*0.22, 50);
+    drawCloud(W*0.2, horizonY*0.3, 60);
+    drawCloud(W*0.6, horizonY*0.2, 80);
+    drawCloud(W*0.85, horizonY*0.44, 50);
   }
-  // 远山轮廓
-  ctx.fillStyle = theme.grass[0];
-  ctx.globalAlpha = 0.6;
+  // 远山轮廓 (在天空和草地之间)
+  ctx.fillStyle = shade(theme.grass[0], -25);
   ctx.beginPath();
-  ctx.moveTo(0, H*0.5);
+  ctx.moveTo(0, horizonY);
   for (let x=0; x<=W; x+=40) {
-    ctx.lineTo(x, H*0.5 - Math.sin(x*0.01 + 1)*30 - 20);
+    ctx.lineTo(x, horizonY - Math.sin(x*0.01 + 1)*25 - 15);
   }
-  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.lineTo(W, horizonY); ctx.closePath(); ctx.fill();
+
+  // 草地渐变 (地平线→屏幕底) — 一次画好, 分段画会有条纹
+  const grassGrad = ctx.createLinearGradient(0, horizonY, 0, H);
+  grassGrad.addColorStop(0, shade(theme.grass[0], -10));  // 远处稍暗
+  grassGrad.addColorStop(1, theme.grass[0]);               // 近处纯草色
+  ctx.fillStyle = grassGrad;
+  ctx.fillRect(0, horizonY, W, H - horizonY);
 }
 function drawCloud(x,y,r) {
   ctx.beginPath();
@@ -620,11 +627,12 @@ function drawCloud(x,y,r) {
   ctx.fill();
 }
 
-// 雾颜色混合
+// 雾颜色混合 — 混合向中性灰, 不再混向浅蓝(否则绿草变青色)
 function fogColor(hex, fog) {
   const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
   const f = 1 - fog;
-  return `rgb(${Math.floor(r*f+135*fog)},${Math.floor(g*f+200*fog)},${Math.floor(b*f+255*fog)})`;
+  // 中性灰 (180,180,180) — 远处变灰, 不变色
+  return `rgb(${Math.floor(r*f+180*fog)},${Math.floor(g*f+180*fog)},${Math.floor(b*f+180*fog)})`;
 }
 
 function render() {
@@ -642,14 +650,7 @@ function render() {
   let x = 0, dx = 0;
   let maxy = H; // 记录已绘制的最底部 y, 用于遮挡
 
-  // --- 草地: 一次性垂直渐变 (地平线→屏幕底), 彻底消除分段条纹 ---
-  // 地平线附近偏雾色(远), 底部为纯草色(近)
-  const horizonY = H * 0.5;
-  const grassGrad = ctx.createLinearGradient(0, horizonY, 0, H);
-  grassGrad.addColorStop(0, fogColor(theme.grass[0], 0.7));
-  grassGrad.addColorStop(1, theme.grass[0]);
-  ctx.fillStyle = grassGrad;
-  ctx.fillRect(0, horizonY, W, H - horizonY);
+  // 注: 天空+远山+草地渐变已由 drawSky() 一次性画好, 此处不再重复
 
   // --- 绘制路面 (远→近) ---
   for (let n = 0; n < CFG.DRAW_DIST; n++) {
@@ -698,15 +699,16 @@ function render() {
 function drawSegment(seg, theme) {
   const r1 = rumbleWidth(seg.p1.screen.w), r2 = rumbleWidth(seg.p2.screen.w);
   const l1 = laneMarkerWidth(seg.p1.screen.w), l2 = laneMarkerWidth(seg.p2.screen.w);
-  const a = seg.color === 'a';
+  // 车道线按段显示 (每 3 段显示一次, 形成虚线效果)
+  const dashOn = (seg.index % 3 === 0);
+  // 路缘按 4 段交替红白, 避免每段交替形成条纹
+  const rumbleA = Math.floor(seg.index / 4) % 2 === 0;
 
   const px1 = seg.p1.screen.x, py1 = seg.p1.screen.y, pw1 = seg.p1.screen.w;
   const px2 = seg.p2.screen.x, py2 = seg.p2.screen.y, pw2 = seg.p2.screen.w;
 
-  // 注: 草地已在 render() 中一次性渐变绘制, 此处只画路面元素, 避免条纹
-
-  // 路肩: 红白/红黄相间的 rumble strip (加宽, 醒目)
-  const rumbleCol = a ? theme.rumble[0] : theme.rumble[1];
+  // 路肩: 红白/红黄相间 rumble strip (每 4 段交替一次, 不每段交替)
+  const rumbleCol = rumbleA ? theme.rumble[0] : theme.rumble[1];
   polygon(px1 - pw1 - r1, py1, px1 - pw1, py1,
           px2 - pw2,      py2, px2 - pw2 - r2, py2,
           fogColor(rumbleCol, seg.fog));
@@ -714,10 +716,10 @@ function drawSegment(seg, theme) {
           px2 + pw2,      py2, px2 + pw2 + r2, py2,
           fogColor(rumbleCol, seg.fog));
 
-  // 路面 (加深沥青色, 与草地拉开对比)
+  // 路面: 统一深色沥青 (不再交替 road[0]/road[1], 否则会有横向条纹)
   polygon(px1 - pw1, py1, px1 + pw1, py1,
           px2 + pw2, py2, px2 - pw2, py2,
-          fogColor(a ? theme.road[0] : theme.road[1], seg.fog));
+          fogColor(theme.road[0], seg.fog));
 
   // 路面边缘白线 (实线, 界定路面范围)
   const edgeW1 = pw1 * 0.025, edgeW2 = pw2 * 0.025;
@@ -728,8 +730,8 @@ function drawSegment(seg, theme) {
           px2 + pw2, py2, px2 + pw2 - edgeW2, py2,
           fogColor('#f5f5f5', seg.fog));
 
-  // 车道线: 中间黄色虚线 + 车道间白色虚线 (更清晰可辨)
-  if (a) {
+  // 车道线: 中间黄色 + 车道间白色, 每 3 段显示一次形成虚线
+  if (dashOn) {
     const laneW1 = pw1 * 2 / CFG.LANES;
     const laneW2 = pw2 * 2 / CFG.LANES;
     for (let l = 1; l < CFG.LANES; l++) {
