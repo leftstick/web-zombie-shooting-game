@@ -153,19 +153,20 @@ const CFG = {
   FOV: 100,            // 视野角度 (度)
   DRAW_DIST: 220,      // 渲染的路面段数
   FOG: 5,              // 雾浓度
-  CENTRIFUGAL: 0.3,    // 弯道离心力
+  CENTRIFUGAL: 0.08,   // 弯道离心力 (原0.3太强, 1秒就甩出路面)
   MAX_SPEED: 12000,    // 最大速度 (单位/秒)
   ACCEL: 3000,         // 油门加速度
   BRAKE: -8000,        // 刹车减速度
   DECEL: -1500,        // 引擎制动
-  OFFROAD_DECEL: -4000,
-  OFFROAD_LIMIT: 1000,
-  STEER: 3.0,          // 转向速度
+  OFFROAD_DECEL: -3000,
+  OFFROAD_LIMIT: 1500,
+  STEER: 3.2,          // 转向速度 (提高让玩家能对抗离心力)
   START_TIME: 60,      // 初始倒计时
   CP_TIME: 18,         // 检查点加时
   STAGES: 5,           // 关卡总数
   HIT_SLOW: 0.5,
   HIT_TIME_LOSS: 1.2,
+  ROAD_LIMIT: 1.4,     // 车横向移动范围 (路面±1, 允许稍微驶出)
 };
 const camDepth = 1 / Math.tan((CFG.FOV / 2) * Math.PI / 180);
 
@@ -466,11 +467,17 @@ class GameScene extends Phaser.Scene {
     p.x += dx * CFG.STEER * dt * 2 * (p.speed / CFG.MAX_SPEED);
     p.x -= seg.curve * CFG.CENTRIFUGAL * (p.speed / CFG.MAX_SPEED) * dt;
 
-    // --- 路外减速 ---
+    // --- 夹紧: 车不能无限偏移飞出屏幕 ---
+    p.x = Math.max(-CFG.ROAD_LIMIT, Math.min(CFG.ROAD_LIMIT, p.x));
+
+    // --- 路外减速 + 微弱回拉 (避免被甩出去后卡死) ---
     if (Math.abs(p.x) > 1.0) {
       p.speed += CFG.OFFROAD_DECEL * dt;
       p.speed = Math.max(0, p.speed);
       if (p.speed > CFG.OFFROAD_LIMIT) p.speed = CFG.OFFROAD_LIMIT;
+      // 路外时给一个微弱回拉力, 把车慢慢拉回路面
+      const pullBack = (p.x > 0 ? -1 : 1) * 0.8 * dt;
+      p.x += pullBack;
     } else {
       p.speed = Math.min(p.speed, CFG.MAX_SPEED);
     }
