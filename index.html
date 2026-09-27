@@ -597,33 +597,45 @@ class GameScene extends Phaser.Scene {
       visibleSegs.push({ seg, n });
     }
 
-    // === 2. 路面主体 — 只画一次! 大梯形底色 ===
+    // === 2. 路面主体 — 用所有可见段的左右边缘拼成一个弯曲多边形 ===
+    //    这样路面跟着弯道弯曲, 而且是一次填充无分段缝隙
     if (visibleSegs.length > 0) {
-      const far = visibleSegs[0].seg;
-      const near = visibleSegs[visibleSegs.length - 1].seg;
       ctx.fillStyle = theme.road;
       ctx.beginPath();
-      ctx.moveTo(far.p1.screen.x - far.p1.screen.w, far.p1.screen.y);
-      ctx.lineTo(near.p2.screen.x - near.p2.screen.w, near.p2.screen.y);
-      ctx.lineTo(near.p2.screen.x + near.p2.screen.w, near.p2.screen.y);
-      ctx.lineTo(far.p1.screen.x + far.p1.screen.w, far.p1.screen.y);
+      // 左边缘: 远→近 (从上到下)
+      const first = visibleSegs[0].seg;
+      const last = visibleSegs[visibleSegs.length - 1].seg;
+      ctx.moveTo(first.p1.screen.x - first.p1.screen.w, first.p1.screen.y);
+      for (const vs of visibleSegs) {
+        ctx.lineTo(vs.seg.p1.screen.x - vs.seg.p1.screen.w, vs.seg.p1.screen.y);
+      }
+      ctx.lineTo(last.p2.screen.x - last.p2.screen.w, last.p2.screen.y);
+      // 右边缘: 近→远 (从下到上)
+      ctx.lineTo(last.p2.screen.x + last.p2.screen.w, last.p2.screen.y);
+      for (let i = visibleSegs.length - 1; i >= 0; i--) {
+        const seg = visibleSegs[i].seg;
+        ctx.lineTo(seg.p1.screen.x + seg.p1.screen.w, seg.p1.screen.y);
+      }
+      ctx.lineTo(first.p1.screen.x + first.p1.screen.w, first.p1.screen.y);
       ctx.closePath();
       ctx.fill();
 
-      // 路面边缘白线
+      // 路面边缘白线 (沿着弯曲的路面边缘画)
       ctx.strokeStyle = '#f5f5f5';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(far.p1.screen.x - far.p1.screen.w, far.p1.screen.y);
-      ctx.lineTo(near.p2.screen.x - near.p2.screen.w, near.p2.screen.y);
-      ctx.moveTo(far.p1.screen.x + far.p1.screen.w, far.p1.screen.y);
-      ctx.lineTo(near.p2.screen.x + near.p2.screen.w, near.p2.screen.y);
+      ctx.moveTo(first.p1.screen.x - first.p1.screen.w, first.p1.screen.y);
+      for (const vs of visibleSegs) ctx.lineTo(vs.seg.p1.screen.x - vs.seg.p1.screen.w, vs.seg.p1.screen.y);
+      ctx.lineTo(last.p2.screen.x - last.p2.screen.w, last.p2.screen.y);
+      ctx.moveTo(first.p1.screen.x + first.p1.screen.w, first.p1.screen.y);
+      for (const vs of visibleSegs) ctx.lineTo(vs.seg.p1.screen.x + vs.seg.p1.screen.w, vs.seg.p1.screen.y);
+      ctx.lineTo(last.p2.screen.x + last.p2.screen.w, last.p2.screen.y);
       ctx.stroke();
 
-      // 车道中心黄线 (简化: 只画中间车道, 虚线效果)
+      // 车道中心黄线 (沿路面中心线画虚线)
       for (const vs of visibleSegs) {
-        if (vs.seg.index % 6 < 3) {
-          const seg = vs.seg;
+        const seg = vs.seg;
+        if (seg.index % 6 < 3) {
           ctx.strokeStyle = '#ffd23f';
           ctx.lineWidth = Math.max(1, seg.p1.screen.w * 0.015);
           ctx.globalAlpha = Math.max(0.3, 1 - seg.fog * 0.7);
@@ -636,34 +648,32 @@ class GameScene extends Phaser.Scene {
       }
     }
 
-    // === 3. rumble strip (红白路缘) ===
+    // === 3. rumble strip (红白路缘) — 每段都画, 紧贴路面边缘, 跟着弯道弯曲 ===
     for (let i = 0; i < visibleSegs.length; i++) {
-      const { seg, n } = visibleSegs[i];
+      const { seg } = visibleSegs[i];
       if (seg.p2.screen.y >= maxy) continue;
 
-      const r = seg.p2.screen.w * 0.14;
+      const r = seg.p2.screen.w * 0.12;
       const rumbleA = Math.floor(seg.index / 8) % 2 === 0;
       const col = rumbleA ? theme.rumble[0] : theme.rumble[1];
       const fogCol = fogColor(col, seg.fog);
 
-      if (seg.index % 3 === 0) {
-        const p1 = seg.p1.screen, p2 = seg.p2.screen;
-        ctx.fillStyle = fogCol;
-        // 左侧路缘
-        ctx.beginPath();
-        ctx.moveTo(p1.x - p1.w - r, p1.y);
-        ctx.lineTo(p1.x - p1.w, p1.y);
-        ctx.lineTo(p2.x - p2.w, p2.y);
-        ctx.lineTo(p2.x - p2.w - r, p2.y);
-        ctx.closePath(); ctx.fill();
-        // 右侧路缘
-        ctx.beginPath();
-        ctx.moveTo(p1.x + p1.w, p1.y);
-        ctx.lineTo(p1.x + p1.w + r, p1.y);
-        ctx.lineTo(p2.x + p2.w + r, p2.y);
-        ctx.lineTo(p2.x + p2.w, p2.y);
-        ctx.closePath(); ctx.fill();
-      }
+      const p1 = seg.p1.screen, p2 = seg.p2.screen;
+      ctx.fillStyle = fogCol;
+      // 左侧路缘 (紧贴路面左边缘)
+      ctx.beginPath();
+      ctx.moveTo(p1.x - p1.w, p1.y);
+      ctx.lineTo(p1.x - p1.w - r, p1.y);
+      ctx.lineTo(p2.x - p2.w - r, p2.y);
+      ctx.lineTo(p2.x - p2.w, p2.y);
+      ctx.closePath(); ctx.fill();
+      // 右侧路缘 (紧贴路面右边缘)
+      ctx.beginPath();
+      ctx.moveTo(p1.x + p1.w, p1.y);
+      ctx.lineTo(p1.x + p1.w + r, p1.y);
+      ctx.lineTo(p2.x + p2.w + r, p2.y);
+      ctx.lineTo(p2.x + p2.w, p2.y);
+      ctx.closePath(); ctx.fill();
 
       maxy = seg.p2.screen.y;
     }
