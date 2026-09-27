@@ -230,9 +230,10 @@ function buildTrack() {
     setTheme(startIdx, endIdx, s);
     for (let i = startIdx + 3; i < endIdx; i += 55) segments[i].isCheckpoint = true;
   }
-  // 景物
+  // 景物 — 只能长在路外 (offset 绝对值 > 1.1), 不能挡路
   for (let i=10; i<segments.length; i+=4+Math.floor(Math.random()*6)) {
-    const offset = (Math.random()*2-1) * 1.2;
+    const side = Math.random() > 0.5 ? 1 : -1;
+    const offset = side * (1.15 + Math.random() * 1.0);
     segments[i].sprites.push({ offset, type: segments[i].theme.sprites });
   }
   trackLength = segments.length * CFG.SEG_LEN;
@@ -801,7 +802,9 @@ class GameScene extends Phaser.Scene {
       const scale = seg.p1.screen.scale;
       const destX = seg.p1.screen.x + scale * sp.offset * CFG.ROAD_W * W/2;
       const destY = seg.p1.screen.y;
-      const destW = scale * CFG.ROAD_W * W/2 * 0.3;
+      let destW = scale * CFG.ROAD_W * W/2 * 0.3;
+      // 限制景物最大宽度, 避免近处透视放大成巨树
+      destW = Math.min(destW, W * 0.18);
       const destH = destW * 2.5;
       this.drawSprite2D(ctx, sp.type, destX, destY, destW, destH, seg.fog);
     }
@@ -850,7 +853,9 @@ class GameScene extends Phaser.Scene {
       const scale = seg.p1.screen.scale;
       const cx = seg.p1.screen.x + scale * car.offset * CFG.ROAD_W * W/2;
       const cy = seg.p1.screen.y;
-      const cw = scale * CFG.ROAD_W * W/2 * 0.42;
+      let cw = scale * CFG.ROAD_W * W/2 * 0.42;
+      // 限制 AI 车最大宽度, 避免近距离透视放大成巨型方块
+      cw = Math.min(cw, W * 0.28);
       const ch = cw * 0.65;
       this.drawCar2D(ctx, cx, cy, cw, ch, car.color, false, seg.fog);
     }
