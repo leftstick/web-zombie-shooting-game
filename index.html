@@ -357,12 +357,13 @@ class GameScene extends Phaser.Scene {
       const el = document.getElementById(id);
       const on = (e) => { e.preventDefault(); this.inputA[key]=true; el.classList.add('active'); };
       const off = (e) => { e.preventDefault(); this.inputA[key]=false; el.classList.remove('active'); };
-      el.addEventListener('touchstart', on, {passive:false});
-      el.addEventListener('touchend', off, {passive:false});
-      el.addEventListener('touchcancel', off, {passive:false});
-      el.addEventListener('mousedown', on);
-      el.addEventListener('mouseup', off);
-      el.addEventListener('mouseleave', off);
+      // pointer 事件统一支持触摸+鼠标
+      el.addEventListener('pointerdown', on);
+      el.addEventListener('pointerup', off);
+      el.addEventListener('pointercancel', off);
+      el.addEventListener('pointerleave', off);
+      // 全局 pointerup 兜底: 手指滑出按钮后松开也能复位
+      document.addEventListener('pointerup', () => { this.inputA[key]=false; el.classList.remove('active'); });
     };
     bind('btnLeft','left'); bind('btnRight','right');
     bind('btnGas','gas'); bind('btnBrake','brake');
