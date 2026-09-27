@@ -696,6 +696,17 @@ function render() {
     maxy = seg.p2.screen.y;
   }
 
+  // --- 远雾覆盖: 用连续渐变覆盖远处路面, 避免分段 fog 产生条纹 ---
+  {
+    const horizonY = H * 0.5;
+    const fogGrad = ctx.createLinearGradient(0, horizonY - 20, 0, horizonY + 180);
+    fogGrad.addColorStop(0, 'rgba(180,180,180,0.55)');   // 地平线附近 55% 灰
+    fogGrad.addColorStop(0.5, 'rgba(180,180,180,0.15)');
+    fogGrad.addColorStop(1, 'rgba(180,180,180,0)');      // 近处完全透明
+    ctx.fillStyle = fogGrad;
+    ctx.fillRect(0, horizonY - 20, W, 200);
+  }
+
   // --- 绘制景物与车辆 (远→近, 用逆序遍历以正确遮挡) ---
   for (let n = CFG.DRAW_DIST - 1; n >= 0; n--) {
     const segIdx = (playerSeg.index + n) % segments.length;
