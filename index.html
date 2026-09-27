@@ -725,9 +725,9 @@ function drawSegment(seg, theme) {
   // 路缘按 8 段交替红白, 更宽条纹减少锯齿感
   const rumbleA = Math.floor(seg.index / 8) % 2 === 0;
 
-  // 路面 polygon 顶点 — 上下各延伸 2px 覆盖相邻段缝隙
-  const px1 = seg.p1.screen.x, py1 = seg.p1.screen.y - 2, pw1 = seg.p1.screen.w;
-  const px2 = seg.p2.screen.x, py2 = seg.p2.screen.y + 2, pw2 = seg.p2.screen.w;
+  // 路面 polygon 顶点 — 原始坐标, 不延伸
+  const px1 = seg.p1.screen.x, py1 = seg.p1.screen.y, pw1 = seg.p1.screen.w;
+  const px2 = seg.p2.screen.x, py2 = seg.p2.screen.y, pw2 = seg.p2.screen.w;
 
   // 路肩: 红白/红黄相间 rumble strip (每 4 段交替一次, 不每段交替)
   const rumbleCol = rumbleA ? theme.rumble[0] : theme.rumble[1];
@@ -738,10 +738,11 @@ function drawSegment(seg, theme) {
           px2 + pw2,      py2, px2 + pw2 + r2, py2,
           fogColor(rumbleCol, seg.fog));
 
-  // 路面: 统一深色沥青 (不再交替 road[0]/road[1], 否则会有横向条纹)
+  // 路面: 统一深色沥青 — 不应用 fog, 保证路面颜色均匀无分段条纹
+  // (fog 只用于 rumble 和车道线, 让远处这些细节变淡)
   polygon(px1 - pw1, py1, px1 + pw1, py1,
           px2 + pw2, py2, px2 - pw2, py2,
-          fogColor(theme.road[0], seg.fog));
+          theme.road[0]);
 
   // 路面边缘白线 (实线, 界定路面范围)
   const edgeW1 = pw1 * 0.025, edgeW2 = pw2 * 0.025;
