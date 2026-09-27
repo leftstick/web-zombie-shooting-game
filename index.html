@@ -689,9 +689,6 @@ function render() {
     project(seg.p1, camX - seg.p1.world.x, camY, camZ);
     project(seg.p2, camX - seg.p2.world.x, camY, camZ);
 
-    // 修复路面分段缝隙: 强制对齐段顶部 y 到上一段底部 - 1px, 覆盖任何浮点缝隙
-    if (seg.p1.screen.y > maxy - 1) seg.p1.screen.y = maxy - 1;
-
     // 跳过不可见段
     if (seg.p1.camera.z <= camDepth || seg.p2.screen.y >= seg.p1.screen.y || seg.p2.screen.y >= maxy) continue;
 
@@ -725,11 +722,12 @@ function drawSegment(seg, theme) {
   const l1 = laneMarkerWidth(seg.p1.screen.w), l2 = laneMarkerWidth(seg.p2.screen.w);
   // 车道线按段显示 (每 3 段显示一次, 形成虚线效果)
   const dashOn = (seg.index % 3 === 0);
-  // 路缘按 4 段交替红白, 避免每段交替形成条纹
-  const rumbleA = Math.floor(seg.index / 4) % 2 === 0;
+  // 路缘按 8 段交替红白, 更宽条纹减少锯齿感
+  const rumbleA = Math.floor(seg.index / 8) % 2 === 0;
 
-  const px1 = seg.p1.screen.x, py1 = seg.p1.screen.y, pw1 = seg.p1.screen.w;
-  const px2 = seg.p2.screen.x, py2 = seg.p2.screen.y, pw2 = seg.p2.screen.w;
+  // 路面 polygon 顶点 — 上下各延伸 2px 覆盖相邻段缝隙
+  const px1 = seg.p1.screen.x, py1 = seg.p1.screen.y - 2, pw1 = seg.p1.screen.w;
+  const px2 = seg.p2.screen.x, py2 = seg.p2.screen.y + 2, pw2 = seg.p2.screen.w;
 
   // 路肩: 红白/红黄相间 rumble strip (每 4 段交替一次, 不每段交替)
   const rumbleCol = rumbleA ? theme.rumble[0] : theme.rumble[1];
