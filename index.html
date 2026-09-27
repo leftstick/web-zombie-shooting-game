@@ -390,18 +390,39 @@ let aiCars = [];
 const CAR_COLORS = ['#2060ff','#20c020','#ffcc00','#c040ff','#ff8800','#00cccc','#ffffff','#ff3030'];
 function spawnAICars() {
   aiCars = [];
-  // 生成 60 辆车, 散布在玩家前方不同距离 (最近也在 12 段外, 避免紧贴重叠成重影)
-  for (let i=0; i<60; i++) {
-    let segIdx;
-    if (i < 10) segIdx = 12 + Math.floor(Math.random() * 25);     // 近距车 (12~36 段)
-    else if (i < 30) segIdx = 40 + Math.floor(Math.random() * 80); // 中距车
-    else segIdx = 130 + Math.floor(Math.random() * (segments.length - 200)); // 远距车
-    aiCars.push({
-      offset: (Math.random()*2 - 1) * 0.6,   // 横向偏移 ±0.6, 车完全在路面内
-      speed: 500 + Math.random() * 4500,  // 慢车居多, 便于玩家追上
-      z: segIdx * CFG.SEG_LEN,
-      color: CAR_COLORS[Math.floor(Math.random()*CAR_COLORS.length)],
-    });
+  // 生成 35 辆车, 严格间隔分布, 避免远处堆叠成重影
+  // 策略: 每辆车之间至少隔 N 段, 远距车更稀疏
+  const MIN_GAP = 3; // 最小段间隔
+  const usedSegs = new Set();
+  const tryPick = (min, max, gap) => {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const segIdx = min + Math.floor(Math.random() * (max - min));
+      let ok = true;
+      for (let d = -gap; d <= gap; d++) if (usedSegs.has(segIdx + d)) { ok = false; break; }
+      if (ok) return segIdx;
+    }
+    return -1; // 找不到空位
+  };
+  // 近距 (15~50 段): 12 辆, 间隔 3 段
+  for (let i=0; i<12; i++) {
+    const segIdx = tryPick(15, 50, 3);
+    if (segIdx < 0) break;
+    usedSegs.add(segIdx);
+    aiCars.push({ offset:(Math.random()*2-1)*0.6, speed:800+Math.random()*3500, z:segIdx*CFG.SEG_LEN, color:CAR_COLORS[Math.floor(Math.random()*CAR_COLORS.length)] });
+  }
+  // 中距 (50~120 段): 15 辆, 间隔 4 段
+  for (let i=0; i<15; i++) {
+    const segIdx = tryPick(50, 120, 4);
+    if (segIdx < 0) break;
+    usedSegs.add(segIdx);
+    aiCars.push({ offset:(Math.random()*2-1)*0.6, speed:1500+Math.random()*3500, z:segIdx*CFG.SEG_LEN, color:CAR_COLORS[Math.floor(Math.random()*CAR_COLORS.length)] });
+  }
+  // 远距 (120~200 段): 8 辆, 间隔 6 段 — 远距车稀疏, 透视下不堆一起
+  for (let i=0; i<8; i++) {
+    const segIdx = tryPick(120, Math.min(200, CFG.DRAW_DIST - 5), 6);
+    if (segIdx < 0) break;
+    usedSegs.add(segIdx);
+    aiCars.push({ offset:(Math.random()*2-1)*0.6, speed:2000+Math.random()*3500, z:segIdx*CFG.SEG_LEN, color:CAR_COLORS[Math.floor(Math.random()*CAR_COLORS.length)] });
   }
 }
 
@@ -667,6 +688,9 @@ function render() {
 
     project(seg.p1, camX - seg.p1.world.x, camY, camZ);
     project(seg.p2, camX - seg.p2.world.x, camY, camZ);
+
+    // 修复路面分段缝隙: 强制对齐段顶部 y 到上一段底部 - 1px, 覆盖任何浮点缝隙
+    if (seg.p1.screen.y > maxy - 1) seg.p1.screen.y = maxy - 1;
 
     // 跳过不可见段
     if (seg.p1.camera.z <= camDepth || seg.p2.screen.y >= seg.p1.screen.y || seg.p2.screen.y >= maxy) continue;
